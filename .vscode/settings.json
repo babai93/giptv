@@ -1,0 +1,6 @@
+{
+    "phpfmt.cakephp": true,
+    "phpfmt.enable_auto_align": true,
+    "phpfmt.detect_indent": true,
+    "phpfmt.php_bin": "D:\\xampp\\php\\php.exe"
+}
