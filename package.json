@@ -1,0 +1,13 @@
+{
+  "name": "global-iptv-player",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Global IPTV player powered by iptv-org API",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "node local-server.js",
+    "check": "node --check api/index.js"
+  }
+}
