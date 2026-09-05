@@ -2,6 +2,8 @@ const fs = require('fs/promises');
 const path = require('path');
 const zlib = require('zlib');
 
+// npm run dev
+
 const DATA_ROOT = path.join(__dirname, '..');
 const CACHE_ROOT = '/tmp/giptv-cache';
 const API_ROOT = 'https://iptv-org.github.io/api';
@@ -92,6 +94,28 @@ function countryFlag(code) {
   return String.fromCodePoint(...code.toUpperCase().split('').map(char => char.charCodeAt(0) + 127397));
 }
 
+function categoryIcon(categoryName) {
+  const name = String(categoryName || '').toLowerCase();
+  const icons = [
+    [/news|current affairs/, '📰'],
+    [/sport|football|cricket|tennis/, '🏆'],
+    [/movie|film|cinema/, '🎬'],
+    [/music|radio/, '🎵'],
+    [/kid|children|cartoon/, '🧸'],
+    [/entertainment|comedy/, '🎭'],
+    [/documentary|nature|wildlife/, '🌿'],
+    [/religious|religion/, '🙏'],
+    [/business|finance/, '💼'],
+    [/science|technology/, '🔬'],
+    [/weather/, '🌤️'],
+    [/shopping/, '🛍️'],
+    [/travel/, '✈️'],
+    [/series|drama/, '📺'],
+    [/education|educational/, '🎓']
+  ];
+  return icons.find(([pattern]) => pattern.test(name))?.[1] || '📺';
+}
+
 function queryUrl(req, params = {}) {
   const url = new URL(req.url || '/', `https://${req.headers.host || 'localhost'}`);
   Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
@@ -107,7 +131,7 @@ function renderPage({ channels, countries, categories, countryNames, total, page
       : '';
     return `
     <div class="col-6 col-sm-4 col-md-3"><div class="card channel-card h-100 p-2" onclick='playStream(...${escapeHtml(JSON.stringify([channel.stream_url, channel.name, channel.id, channel.program_name || '']), true)})'>
-      <div class="logo-container mb-2"><img src="${escapeHtml(channel.logo || `https://via.placeholder.com/150?text=${encodeURIComponent(channel.name)}`, true)}" class="channel-logo" alt="Logo" loading="lazy" onerror="this.src='https://via.placeholder.com/150?text=No+Logo'"></div>
+      <div class="logo-container mb-2"><img src="${escapeHtml(channel.logo || `https://placehold.co/150x80/000/EEE?font=montserrat&text=${encodeURIComponent(channel.name)}`, true)}" class="channel-logo" alt="Logo" loading="lazy" onerror="this.src='https://placehold.co/150x80/000/EEE?font=montserrat&text=No+Logo'"></div>
       <div class="text-center text-truncate fw-bold" style="font-size:0.85rem" title="${escapeHtml(channel.name, true)}">${escapeHtml(channel.name)}</div>
       <div class="text-center text-muted" style="font-size:0.7rem">${flagMarkup} ${escapeHtml(countryNames[countryCode] || countryCode || 'Unknown')}</div>
     </div></div>`;
@@ -119,7 +143,7 @@ function renderPage({ channels, countries, categories, countryNames, total, page
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="icon" href="/favicon.ico" type="image/x-icon"><title>Global IPTV</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link rel="stylesheet" href="https://unpkg.com/shaka-player@4.15.5/dist/controls.css"><script src="https://unpkg.com/shaka-player@4.15.5/dist/shaka-player.ui.js"></script>
     <style>${styles()}</style></head><body><div class="background-animation" aria-hidden="true">${'<span class="bubble"></span>'.repeat(8)}</div><div class="container py-4">
-    <div class="row mb-4 align-items-center glass-panel header-panel"><div class="col-md-7"><h2>▣ Global IPTV Player</h2><p class="text-muted small mb-0">Powered by iptv-org API | Found ${total.toLocaleString()} playable channels</p></div><div class="col-md-5 mt-3 mt-md-0"><form id="filter-form" method="GET"><div class="input-group"><input type="text" name="search" class="form-control glass-control" placeholder="Search for a channel..." value="${escapeHtml(search, true)}"><div class="country-picker"><input type="hidden" name="country" value="${escapeHtml(country, true)}"><button type="button" id="country-picker-toggle" class="country-picker-toggle glass-control"><span>${country ? `<img src="https://flagcdn.com/20x15/${country.toLowerCase()}.png" alt="${escapeHtml(countryFlag(country), true)} flag" width="20" height="15">` : ''} ${escapeHtml(selectedCountryName)}</span><span aria-hidden="true">&#9662;</span></button><div id="country-picker-menu" class="country-picker-menu" hidden><button type="button" class="country-option" data-country="">All countries</button>${countryPickerOptions}</div></div><select name="category" class="form-select glass-control"><option value="">All categories</option>${Object.entries(categories).map(([id, name]) => `<option value="${escapeHtml(id, true)}" ${category === id ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('')}</select><button class="btn btn-primary" type="submit">Search</button>${search || country || category ? '<a href="/" class="btn btn-outline-secondary clear">Clear</a>' : ''}</div></form></div></div>
+    <div class="row mb-4 align-items-center glass-panel header-panel"><div class="col-md-7"><h2>▣ Global IPTV Player</h2><p class="text-muted small mb-0">Powered by iptv-org API | Found ${total.toLocaleString()} playable channels</p></div><div class="col-md-5 mt-3 mt-md-0"><form id="filter-form" method="GET"><div class="input-group"><input type="text" name="search" class="form-control glass-control" placeholder="Search for a channel..." value="${escapeHtml(search, true)}"><div class="country-picker"><input type="hidden" name="country" value="${escapeHtml(country, true)}"><button type="button" id="country-picker-toggle" class="country-picker-toggle glass-control"><span>${country ? `<img src="https://flagcdn.com/20x15/${country.toLowerCase()}.png" alt="${escapeHtml(countryFlag(country), true)} flag" width="20" height="15">` : ''} ${escapeHtml(selectedCountryName)}</span><span aria-hidden="true">&#9662;</span></button><div id="country-picker-menu" class="country-picker-menu" hidden><button type="button" class="country-option" data-country="">All countries</button>${countryPickerOptions}</div></div><select name="category" class="form-select glass-control"><option value="">📺 All categories</option>${Object.entries(categories).map(([id, name]) => `<option value="${escapeHtml(id, true)}" ${category === id ? 'selected' : ''}>${categoryIcon(name)} ${escapeHtml(name)}</option>`).join('')}</select><button class="btn btn-primary" type="submit">Search</button>${search || country || category ? '<a href="/" class="btn btn-outline-secondary clear" onmousedown="this.form.elements.search.value=\'\'" onclick="this.form.elements.search.value=\'\'">Clear</a>' : ''}</div></form></div></div>
     <div class="row"><div class="col-lg-5 mb-4"><div id="player-wrapper"><div data-shaka-player-container><video data-shaka-player id="video-player" autoplay></video></div><div class="p-3 player-meta"><div class="d-flex align-items-center justify-content-between gap-2"><h5 id="now-playing-title" class="m-0 text-truncate">Select a channel to play</h5><small id="now-playing-status" class="text-muted">Waiting...</small></div><div id="now-playing-program" class="small text-light text-truncate mt-1" aria-live="polite"></div></div></div></div><div class="col-lg-7"><div id="channel-list" class="row g-3">${cards}</div><div id="pagination-container">${pageLinks}</div></div></div></div><script>${clientScript()}</script></body></html>`;
 }
 
@@ -139,9 +163,21 @@ module.exports = async function handler(req, res) {
   ]);
   const countryNames = Object.fromEntries(countryData.filter(item => item.code && item.name).map(item => [item.code.toUpperCase(), item.name]));
   const categoryNames = Object.fromEntries(categoryData.filter(item => item.id && item.name).map(item => [item.id, item.name]));
-  const streamMap = Object.fromEntries(streams.filter(item => item.channel && item.url).map(item => [item.channel, item.url]));
+  const streamMap = streams.filter(item => item.channel && item.url).reduce((map, item) => {
+    if (! map[item.channel]) map[item.channel] = [];
+    map[item.channel].push(item.url);
+    return map;
+  }, {});
   const logoMap = {}; logos.filter(item => item.channel && item.url).forEach(item => { if (!logoMap[item.channel] || item.in_use) logoMap[item.channel] = item.url; });
-  let playable = channels.filter(item => item.id && streamMap[item.id]).map(item => ({ ...item, stream_url: streamMap[item.id], logo: logoMap[item.id], program_name: epg.programs[item.id] || epg.byName[(item.name || '').toLowerCase().replace(/[^a-z0-9]/g, '')] || '' }));
+  let playable = channels.filter(item => item.id && streamMap[item.id]).map(item => {
+    const streamUrls = streamMap[item.id];
+    const preferredUrl = [...streamUrls].sort((firstUrl, secondUrl) => {
+      const firstPreferred = firstUrl.includes('streams.tangotv.in') ? 0 : 1;
+      const secondPreferred = secondUrl.includes('streams.tangotv.in') ? 0 : 1;
+      return firstPreferred - secondPreferred;
+    })[0];
+    return { ...item, stream_urls: streamUrls, stream_url: preferredUrl, logo: logoMap[item.id], program_name: epg.programs[item.id] || epg.byName[(item.name || '').toLowerCase().replace(/[^a-z0-9]/g, '')] || '' };
+  });
   const allCountries = Object.fromEntries([...new Set(playable.map(item => (item.country || '').toUpperCase()).filter(Boolean))].sort().map(code => [code, countryNames[code] || code]));
   const allCategories = Object.fromEntries([...new Set(playable.flatMap(item => Array.isArray(item.categories) ? item.categories : [item.categories]).filter(Boolean))].sort().map(id => [id, categoryNames[id] || id]));
   const search = params.get('search') || '', country = (params.get('country') || '').toUpperCase(), category = params.get('category') || '';

@@ -2,5 +2,11 @@
     "phpfmt.cakephp": true,
     "phpfmt.enable_auto_align": true,
     "phpfmt.detect_indent": true,
-    "phpfmt.php_bin": "D:\\xampp\\php\\php.exe"
+    "phpfmt.php_bin": "D:\\xampp\\php\\php.exe",
+    "chat.tools.terminal.autoApprove": {
+        "/^& 'C:\\\\Program Files\\\\nodejs\\\\node\\.exe' --check api/index\\.js; Write-Output \"exit=\\$LASTEXITCODE\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
 }
