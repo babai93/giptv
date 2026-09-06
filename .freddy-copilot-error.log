@@ -29,3 +29,33 @@
       Extension Version:: 2.6.0
       --------------------------------------
     
+      --------------------------------------
+      Error Stack:: "AxiosError: Request failed with status code 401\n    at Pe (c:\\Users\\Babai\\.vscode\\extensions\\freshworksmarketplace.freddy-copilot-2.8.4\\dist\\extension.js:2:353380)\n    at IncomingMessage.<anonymous> (c:\\Users\\Babai\\.vscode\\extensions\\freshworksmarketplace.freddy-copilot-2.8.4\\dist\\extension.js:2:365250)\n    at IncomingMessage.emit (node:events:521:24)\n    at endReadableNT (node:internal/streams/readable:1729:12)\n    at processTicksAndRejections (node:internal/process/task_queues:90:21)"
+      Error Message:: "Request failed with status code 401"
+      Error Name:: "AxiosError"
+      Request ID:: cda41bdb-a5e0-45f7-8356-3f6f186bd739
+      
+      Env:: release
+      API Route:: /api/v1/copilot/migration_scope
+      API Response Message:: Invalid token
+      API Response Error Type:: unauthorized
+
+      Timestamp:: Sun, 06 Sep 2026 03:11:32 GMT
+      Extension Version:: 2.8.4
+      --------------------------------------
+    
+      --------------------------------------
+      Error Stack:: "Error: Please set up the FDK path to proceed, you can set up the path from settings.\n    at t.FdkHelper.getfdkPathFromConfig (c:\\Users\\Babai\\.vscode\\extensions\\freshworksmarketplace.freddy-copilot-2.8.4\\dist\\extension.js:2:252948)\n    at t.FdkHelper.runInBackground (c:\\Users\\Babai\\.vscode\\extensions\\freshworksmarketplace.freddy-copilot-2.8.4\\dist\\extension.js:2:254395)\n    at t.FdkHelper.getFdkVersion (c:\\Users\\Babai\\.vscode\\extensions\\freshworksmarketplace.freddy-copilot-2.8.4\\dist\\extension.js:2:250091)\n    at v.getFdkVersion (c:\\Users\\Babai\\.vscode\\extensions\\freshworksmarketplace.freddy-copilot-2.8.4\\dist\\extension.js:2:321507)\n    at v.resolveWebviewView (c:\\Users\\Babai\\.vscode\\extensions\\freshworksmarketplace.freddy-copilot-2.8.4\\dist\\extension.js:2:295998)\n    at processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at ER.$resolveWebviewView (file:///c:/Users/Babai/AppData/Local/Programs/Microsoft%20VS%20Code/a44adf7f53/resources/app/out/vs/workbench/api/node/extensionHostProcess.js:672:119994)"
+      Error Message:: "Please set up the FDK path to proceed, you can set up the path from settings."
+      Error Name:: "Error"
+      
+      
+      
+      
+      
+      
+
+      Timestamp:: Sun, 06 Sep 2026 03:11:32 GMT
+      Extension Version:: 2.8.4
+      --------------------------------------
+    
