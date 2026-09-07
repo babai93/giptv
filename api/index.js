@@ -1,274 +1,210 @@
-const fs = require('fs/promises');
-const path = require('path');
-const zlib = require('zlib');
+const fs=require('fs/promises');
+const path=require('path');
+const zlib=require('zlib');
 
-// npm run dev
+const DATA_ROOT=path.join(__dirname,'..');
+const CACHE_ROOT='/tmp/giptv-cache';
+const API_ROOT='https://iptv-org.github.io/api';
 
-const DATA_ROOT = path.join(__dirname, '..');
-const CACHE_ROOT = '/tmp/giptv-cache';
-const API_ROOT = 'https://iptv-org.github.io/api';
-
-async function readJson(url, filename) {
-  const cacheFile = path.join(CACHE_ROOT, filename);
-
-  try {
-    const cached = await fs.readFile(cacheFile, 'utf8');
-    const stat = await fs.stat(cacheFile);
-
-    if (Date.now() - stat.mtimeMs < 24 * 60 * 60 * 1000) {
-      return JSON.parse(cached);
-    }
-  } catch (_) {}
-
-  try {
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Node-IPTV-App/1.0'
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    await fs.mkdir(CACHE_ROOT, { recursive: true });
-    await fs.writeFile(cacheFile, JSON.stringify(data));
-
+async function readJson(url,filename){
+  const cacheFile=path.join(CACHE_ROOT,filename);
+  try{
+    const cached=await fs.readFile(cacheFile,'utf8');
+    const stat=await fs.stat(cacheFile);
+    if(Date.now()-stat.mtimeMs<24*60*60*1000)return JSON.parse(cached);
+  }catch(_){}
+  try{
+    const response=await fetch(url,{headers:{'User-Agent':'Node-IPTV-App/1.0'}});
+    if(!response.ok)throw new Error(`HTTP ${response.status}`);
+    const data=await response.json();
+    await fs.mkdir(CACHE_ROOT,{recursive:true});
+    await fs.writeFile(cacheFile,JSON.stringify(data));
     return data;
-  } catch (_) {
-    try {
-      return JSON.parse(
-        await fs.readFile(path.join(DATA_ROOT, filename), 'utf8')
-      );
-    } catch (_) {
+  }catch(_){
+    try{
+      return JSON.parse(await fs.readFile(path.join(DATA_ROOT,filename),'utf8'));
+    }catch(_){
       return [];
     }
   }
 }
 
-async function readEpg() {
-  const cacheFile = path.join(CACHE_ROOT, 'epg.xml');
+async function readEpg(){
+  const cacheFile=path.join(CACHE_ROOT,'epg.xml');
   let xml;
 
-  try {
-    const cached = await fs.readFile(cacheFile, 'utf8');
-    const stat = await fs.stat(cacheFile);
+  try{
+    const cached=await fs.readFile(cacheFile,'utf8');
+    const stat=await fs.stat(cacheFile);
+    if(Date.now()-stat.mtimeMs<6*60*60*1000)xml=cached;
+  }catch(_){}
 
-    if (Date.now() - stat.mtimeMs < 6 * 60 * 60 * 1000) {
-      xml = cached;
-    }
-  } catch (_) {}
-
-  if (!xml) {
-    try {
-      const response = await fetch(
-        'https://avkb.short.gy/epg.xml.gz',
-        {
-          headers: {
-            'User-Agent': 'Node-IPTV-App/1.0'
-          }
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      xml = zlib
-        .gunzipSync(Buffer.from(await response.arrayBuffer()))
-        .toString('utf8');
-
-      await fs.mkdir(CACHE_ROOT, { recursive: true });
-      await fs.writeFile(cacheFile, xml);
-    } catch (_) {
-      try {
-        xml = await fs.readFile(
-          path.join(DATA_ROOT, 'epg.xml'),
-          'utf8'
-        );
-      } catch (_) {
+  if(!xml){
+    try{
+      const response=await fetch('https://avkb.short.gy/epg.xml.gz',{
+        headers:{'User-Agent':'Node-IPTV-App/1.0'}
+      });
+      if(!response.ok)throw new Error(`HTTP ${response.status}`);
+      xml=zlib.gunzipSync(Buffer.from(await response.arrayBuffer())).toString('utf8');
+      await fs.mkdir(CACHE_ROOT,{recursive:true});
+      await fs.writeFile(cacheFile,xml);
+    }catch(_){
+      try{
+        xml=await fs.readFile(path.join(DATA_ROOT,'epg.xml'),'utf8');
+      }catch(_){
         return {};
       }
     }
   }
 
-  const programs = {};
-  const latest = {};
+  const programs={};
+  const latest={};
 
-  for (const match of xml.matchAll(
-    /<programme\b([^>]*)>([\s\S]*?)<\/programme>/gi
-  )) {
-    const attrs = match[1];
-    const body = match[2];
-
-    const channel = attribute(attrs, 'channel');
-    const start = Date.parse(epgDate(attribute(attrs, 'start')));
-    const stop = Date.parse(epgDate(attribute(attrs, 'stop')));
-
-    const title = textContent(
-      body.match(
-        /<title\b[^>]*>([\s\S]*?)<\/title>/i
-      )?.[1] || ''
+  for(const match of xml.matchAll(/<programme\b([^>]*)>([\s\S]*?)<\/programme>/gi)){
+    const attrs=match[1];
+    const body=match[2];
+    const channel=attribute(attrs,'channel');
+    const start=Date.parse(epgDate(attribute(attrs,'start')));
+    const stop=Date.parse(epgDate(attribute(attrs,'stop')));
+    const title=textContent(
+      body.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1]||''
     );
 
-    if (!channel || !title || Number.isNaN(stop)) {
-      continue;
-    }
+    if(!channel||!title||Number.isNaN(stop))continue;
 
-    if (start <= Date.now() && stop > Date.now()) {
-      programs[channel] = title;
-    }
+    if(start<=Date.now()&&stop>Date.now())programs[channel]=title;
 
-    if (!latest[channel] || stop > latest[channel].stop) {
-      latest[channel] = {
-        title,
-        stop
-      };
+    if(!latest[channel]||stop>latest[channel].stop){
+      latest[channel]={title,stop};
     }
   }
 
-  const byName = {};
+  const byName={};
 
-  for (const match of xml.matchAll(
-    /<channel\b([^>]*)>([\s\S]*?)<\/channel>/gi
-  )) {
-    const id = attribute(match[1], 'id');
-
-    const name = textContent(
-      match[2].match(
-        /<display-name\b[^>]*>([\s\S]*?)<\/display-name>/i
-      )?.[1] || ''
+  for(const match of xml.matchAll(/<channel\b([^>]*)>([\s\S]*?)<\/channel>/gi)){
+    const id=attribute(match[1],'id');
+    const name=textContent(
+      match[2].match(/<display-name\b[^>]*>([\s\S]*?)<\/display-name>/i)?.[1]||''
     );
+    const key=name.toLowerCase().replace(/[^a-z0-9]/g,'');
 
-    const key = name
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, '');
-
-    if (name && id && (programs[id] || latest[id])) {
-      byName[key] = programs[id] || latest[id].title;
+    if(name&&id&&(programs[id]||latest[id])){
+      byName[key]=programs[id]||latest[id].title;
     }
   }
 
-  return {
-    programs,
-    byName
-  };
+  return{programs,byName};
 }
 
-function attribute(source, name) {
+function attribute(source,name){
   return source.match(
-    new RegExp(`${name}=["']([^"']*)["']`, 'i')
-  )?.[1] || '';
+    new RegExp(`${name}=["']([^"']*)["']`,'i')
+  )?.[1]||'';
 }
 
-function epgDate(value) {
+function epgDate(value){
   return value.replace(
     /(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s*([+-]\d{4})/,
     '$1-$2-$3T$4:$5:$6$7'
   );
 }
 
-function textContent(value) {
+function textContent(value){
   return value
-    .replace(/<[^>]+>/g, '')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
+    .replace(/<[^>]+>/g,'')
+    .replace(/&amp;/g,'&')
+    .replace(/&lt;/g,'<')
+    .replace(/&gt;/g,'>')
     .trim();
 }
 
-function escapeHtml(value, attributeValue = false) {
-  return String(value ?? '').replace(
+function escapeHtml(value,attributeValue=false){
+  return String(value??'').replace(
     /[&<>"']/g,
-    char => ({
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": attributeValue ? '&#039;' : '&#39;'
+    char=>({
+      '&':'&amp;',
+      '<':'&lt;',
+      '>':'&gt;',
+      '"':'&quot;',
+      "'":attributeValue?'&#039;':'&#39;'
     }[char])
   );
 }
 
-function countryFlag(code) {
-  if (!/^[a-z]{2}$/i.test(code)) {
-    return '';
-  }
+function countryFlag(code){
+  if(!/^[a-z]{2}$/i.test(code))return '';
 
   return String.fromCodePoint(
-    ...code
-      .toUpperCase()
+    ...code.toUpperCase()
       .split('')
-      .map(char => char.charCodeAt(0) + 127397)
+      .map(char=>char.charCodeAt(0)+127397)
   );
 }
 
-function categoryIcon(categoryName) {
-  const name = String(categoryName || '').toLowerCase();
+function categoryIcon(categoryName){
+  const name=String(categoryName||'').toLowerCase();
 
-  const icons = [
-    [/news|current affairs/, '📰'],
-    [/sport|football|cricket|tennis/, '🏆'],
-    [/movie|film|cinema/, '🎬'],
-    [/music|radio/, '🎵'],
-    [/kid|children|cartoon/, '🧸'],
-    [/entertainment|comedy/, '🎭'],
-    [/documentary|nature|wildlife/, '🌿'],
-    [/religious|religion/, '🙏'],
-    [/business|finance/, '💼'],
-    [/science|technology/, '🔬'],
-    [/weather/, '🌤️'],
-    [/shopping/, '🛍️'],
-    [/travel/, '✈️'],
-    [/series|drama/, '📺'],
-    [/education|educational/, '🎓']
+  const icons=[
+    [/news|current affairs/,'📰'],
+    [/sport|football|cricket|tennis/,'🏆'],
+    [/movie|film|cinema|series/,'🎬'],
+    [/music|radio/,'🎵'],
+    [/auto/,'🚗'],
+    [/culture/,'🤲'],
+    [/family/,'👨‍👩‍👧‍👦'],
+    [/outdoor|adventure|relax|nature/,'🏕️'],
+    [/lifestyle|health|fitness/,'💪'],
+    [/kid|children|cartoon/,'🧸'],
+    [/entertainment|comedy/,'🎭'],
+    [/documentary|nature|wildlife/,'🌿'],
+    [/shop/,'🛒'],
+    [/animation|anime/,'🎨'],
+    [/legislative/,'🏛️'],
+    [/public|government/,'🏢'],
+    [/cooking|food|culinary/,'🍳'],
+    [/religious|religion/,'🙏'],
+    [/business|finance/,'💼'],
+    [/science|technology/,'🔬'],
+    [/weather/,'🌤️'],
+    [/shopping/,'🛍️'],
+    [/travel/,'✈️'],
+    [/series|drama/,'📺'],
+    [/education|educational/,'🎓']
   ];
 
-  return icons.find(([pattern]) => pattern.test(name))?.[1] || '📺';
+  return icons.find(([pattern])=>pattern.test(name))?.[1]||'📺';
 }
 
-function queryUrl(req, params = {}) {
-  const url = new URL(
-    req.url || '/',
-    `https://${req.headers.host || 'localhost'}`
+function createPlaceholderUrl(channelName){
+  const name=String(channelName||'Unknown').trim();
+
+  /*
+   * Short names:
+   * Sony Yay! -> Sony+Yay!
+   *
+   * Longer names:
+   * Manoranjan Prime -> Manoranjan%0APrime
+   */
+  const separator=name.length>15?'%0A':'+';
+
+  const text=encodeURIComponent(name)
+    .replace(/%20/g,separator);
+
+  return `https://placehold.co/150x80/080b10/EFEFEF?font=montserrat&text=${text}`;
+}
+
+function queryUrl(req,params={}){
+  const url=new URL(
+    req.url||'/',
+    `https://${req.headers.host||'localhost'}`
   );
 
-  Object.entries(params).forEach(([key, value]) => {
-    url.searchParams.set(key, value);
+  Object.entries(params).forEach(([key,value])=>{
+    url.searchParams.set(key,value);
   });
 
   return `${url.pathname}${url.search}`;
 }
-
-
-/*
- * Create a placeholder URL for channels without logos.
- *
- * Short name:
- *   Sony Yay!
- *
- * Long name:
- *   Manoranjan Prime
- *   ↓
- *   Manoranjan
- *   Prime
- */
-function createPlaceholderUrl(channelName) {
-  const name = String(channelName || 'Unknown');
-
-  let placeholderText;
-
-  if (name.length > 12) {
-    placeholderText = name.replace(/\s+/g, '\n');
-  } else {
-    placeholderText = name;
-  }
-
-  return `https://placehold.co/150x80/000/EEE?font=montserrat&text=${encodeURIComponent(placeholderText)}`;
-}
-
 
 function renderPage({
   channels,
@@ -281,373 +217,435 @@ function renderPage({
   search,
   country,
   category
-}) {
-  const pageChannels = channels.slice(
-    (page - 1) * 48,
-    page * 48
+}){
+  const pageChannels=channels.slice(
+    (page-1)*48,
+    page*48
   );
 
-  const cards = pageChannels.length
-    ? pageChannels
-        .map(channel => {
+  const cards=pageChannels.length
+    ?pageChannels.map(channel=>{
+        const countryCode=(channel.country||'').toUpperCase();
 
-          const countryCode = (
-            channel.country || ''
-          ).toUpperCase();
+        const flagMarkup=/^[A-Z]{2}$/.test(countryCode)
+          ?`<img src="https://flagcdn.com/20x15/${countryCode.toLowerCase()}.png"
+                alt="${escapeHtml(countryFlag(countryCode),true)} flag"
+                width="20"
+                height="15"
+                loading="lazy">`
+          :'';
 
-          const flagMarkup =
-            /^[A-Z]{2}$/.test(countryCode)
-              ? `<img src="https://flagcdn.com/20x15/${countryCode.toLowerCase()}.png" alt="${escapeHtml(countryFlag(countryCode), true)} flag" width="20" height="15" loading="lazy">`
-              : '';
+        const placeholderUrl=createPlaceholderUrl(channel.name);
+        const logoUrl=channel.logo||placeholderUrl;
 
-          /*
-           * Generate channel-name placeholder.
-           *
-           * Example:
-           * Sony Yay!
-           * →
-           * https://placehold.co/150x80/000/EEE?font=montserrat&text=Sony%20Yay!
-           *
-           * Manoranjan Prime
-           * →
-           * Manoranjan
-           * Prime
-           */
-          const placeholderUrl = createPlaceholderUrl(
-            channel.name
-          );
+        const categoriesMarkup=(
+          Array.isArray(channel.categories)
+            ?channel.categories
+            :channel.categories?[channel.categories]:[]
+        )
+          .slice(0,2)
+          .map(id=>{
+            const name=categories[id]||id;
+            return `<span class="channel-category">${categoryIcon(name)} ${escapeHtml(name)}</span>`;
+          })
+          .join('');
 
-          /*
-           * Use actual logo if available.
-           * Otherwise use channel-name placeholder.
-           */
-          const logoUrl = channel.logo || placeholderUrl;
-
-          return `
-    <div class="col-6 col-sm-4 col-md-3">
-      <div
-        class="card channel-card h-100 p-2"
-        onclick='playStream(...${escapeHtml(
-          JSON.stringify([
-            channel.stream_url,
-            channel.name,
-            channel.id,
-            channel.program_name || ''
-          ]),
-          true
-        )})'
-      >
-
-        <div class="logo-container mb-2">
-          <img
-            src="${escapeHtml(logoUrl, true)}"
-            class="channel-logo"
-            alt="${escapeHtml(channel.name, true)}"
-            loading="lazy"
-            onerror="this.onerror=null; this.src='${placeholderUrl}'"
+        return `
+        <div class="col-6 col-sm-4 col-md-3">
+          <div
+            class="channel-card"
+            onclick='playStream(...${escapeHtml(
+              JSON.stringify([
+                channel.stream_url,
+                channel.name,
+                channel.id,
+                channel.program_name||''
+              ]),
+              true
+            )})'
           >
+
+            <div class="channel-logo-wrap">
+              <img
+                src="${escapeHtml(logoUrl,true)}"
+                class="channel-logo"
+                alt="${escapeHtml(channel.name,true)}"
+                loading="lazy"
+                onerror="this.onerror=null;this.src='${placeholderUrl}'"
+              >
+
+              <div class="channel-play">
+                <span>▶</span>
+              </div>
+            </div>
+
+            <div class="channel-info">
+
+              <div
+                class="channel-name"
+                title="${escapeHtml(channel.name,true)}"
+              >
+                ${escapeHtml(channel.name)}
+              </div>
+
+              <div class="channel-meta">
+                ${flagMarkup}
+                <span>
+                  ${escapeHtml(
+                    countryNames[countryCode]||
+                    countryCode||
+                    'Unknown'
+                  )}
+                </span>
+              </div>
+
+              ${categoriesMarkup
+                ?`<div class="channel-tags">${categoriesMarkup}</div>`
+                :''}
+
+            </div>
+
+          </div>
+        </div>`;
+      }).join('')
+    :`
+      <div class="col-12">
+        <div class="empty-state">
+          <div class="empty-icon">📺</div>
+          <h4>No channels found</h4>
+          <p>Try changing your search or filters.</p>
         </div>
+      </div>`;
 
-        <div
-          class="text-center text-truncate fw-bold"
-          style="font-size:0.85rem"
-          title="${escapeHtml(channel.name, true)}"
-        >
-          ${escapeHtml(channel.name)}
-        </div>
+  const pageLinks=totalPages>1
+    ?`
+      <nav class="mt-5">
+        <ul class="pagination">
 
-        <div
-          class="text-center text-muted"
-          style="font-size:0.7rem"
-        >
-          ${flagMarkup}
-          ${escapeHtml(
-            countryNames[countryCode] ||
-            countryCode ||
-            'Unknown'
-          )}
-        </div>
+          ${
+            page>1
+              ?`
+                <li class="page-item">
+                  <a
+                    class="page-link"
+                    href="${queryUrl(
+                      {url:'/',headers:{}},
+                      {page:page-1,search,country,category}
+                    )}"
+                  >
+                    ‹
+                  </a>
+                </li>
+              `
+              :''
+          }
 
-      </div>
-    </div>`;
-        })
-        .join('')
-    : `
-    <div class="col-12 text-center text-muted p-5">
-      <h5>No channels found.</h5>
-    </div>`;
-
-  const pageLinks =
-    totalPages > 1
-      ? `<nav class="mt-4">
-          <ul class="pagination">
-            ${Array.from(
-              { length: totalPages },
-              (_, index) => index + 1
+          ${
+            Array.from(
+              {length:totalPages},
+              (_,index)=>index+1
             )
-              .filter(
-                number =>
-                  number >= Math.max(1, page - 2) &&
-                  number <= Math.min(totalPages, page + 2)
-              )
-              .map(
-                number =>
-                  `<li class="page-item ${
-                    number === page ? 'active' : ''
-                  }">
-                    <a
-                      class="page-link"
-                      href="${queryUrl(
-                        { url: '/', headers: {} },
-                        {
-                          page: number,
-                          search,
-                          country,
-                          category
-                        }
-                      )}"
-                    >
-                      ${number}
-                    </a>
-                  </li>`
-              )
-              .join('')}
-          </ul>
-        </nav>`
-      : '';
+            .filter(number=>
+              number>=Math.max(1,page-2)&&
+              number<=Math.min(totalPages,page+2)
+            )
+            .map(number=>
+              `
+              <li class="page-item ${number===page?'active':''}">
+                <a
+                  class="page-link"
+                  href="${queryUrl(
+                    {url:'/',headers:{}},
+                    {page:number,search,country,category}
+                  )}"
+                >
+                  ${number}
+                </a>
+              </li>
+              `
+            ).join('')
+          }
 
-  const selectedCountryName = country
-    ? countries[country] || country
-    : 'All countries';
+          ${
+            page<totalPages
+              ?`
+                <li class="page-item">
+                  <a
+                    class="page-link"
+                    href="${queryUrl(
+                      {url:'/',headers:{}},
+                      {page:page+1,search,country,category}
+                    )}"
+                  >
+                    ›
+                  </a>
+                </li>
+              `
+              :''
+          }
 
-  const countryPickerOptions = Object.entries(
-    countries
-  )
-    .map(
-      ([code, name]) =>
-        `<button
+        </ul>
+      </nav>
+    `
+    :'';
+
+  const selectedCountryName=
+    country
+      ?countries[country]||country
+      :'All countries';
+
+  const countryPickerOptions=
+    Object.entries(countries)
+      .map(([code,name])=>
+        `
+        <button
           type="button"
           class="country-option"
-          data-country="${escapeHtml(code, true)}"
+          data-country="${escapeHtml(code,true)}"
         >
           <img
             src="https://flagcdn.com/20x15/${code.toLowerCase()}.png"
-            alt="${escapeHtml(countryFlag(code), true)} flag"
+            alt="${escapeHtml(countryFlag(code),true)} flag"
             width="20"
             height="15"
             loading="lazy"
           >
           ${escapeHtml(name)}
-        </button>`
-    )
-    .join('');
+        </button>
+        `
+      )
+      .join('');
 
-  return `<!DOCTYPE html>
+  return `
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
-  <meta charset="UTF-8">
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  >
 
-  <link
-    rel="icon"
-    href="/favicon.ico"
-    type="image/x-icon"
-  >
+<meta charset="UTF-8">
 
-  <title>Global IPTV</title>
+<meta
+  name="viewport"
+  content="width=device-width,initial-scale=1.0"
+>
 
-  <link
-    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
-    rel="stylesheet"
-  >
+<link
+  rel="icon"
+  href="/favicon.ico"
+  type="image/x-icon"
+>
 
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/shaka-player@4.15.5/dist/controls.css"
-  >
+<title>Global IPTV</title>
 
-  <script
-    src="https://unpkg.com/shaka-player@4.15.5/dist/shaka-player.ui.js"
-  ></script>
+<link
+  href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+  rel="stylesheet"
+>
 
-  <style>
-    ${styles()}
-  </style>
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/shaka-player@4.15.5/dist/controls.css"
+>
+
+<script src="https://unpkg.com/shaka-player@4.15.5/dist/shaka-player.ui.js"></script>
+
+<style>
+${styles()}
+</style>
+
 </head>
 
 <body>
 
-  <div
-    class="background-animation"
-    aria-hidden="true"
-  >
-    ${'<span class="bubble"></span>'.repeat(8)}
-  </div>
+<div class="ambient ambient-one"></div>
+<div class="ambient ambient-two"></div>
 
-  <div class="container py-4">
+<div class="container-fluid main-container">
 
-    <div class="row mb-4 align-items-center glass-panel header-panel">
+  <!-- HEADER -->
 
-      <div class="col-md-7">
+  <header class="top-header">
 
-        <div class="d-flex align-items-center gap-2">
+    <div class="brand-area">
 
-          <span class="logo">
-            <img src="gtv-logo.svg" alt="GTV">
-          </span>
-
-          <h1 class="h2 m-0">
-            Global IPTV Player
-          </h1>
-
-        </div>
-
-        <p class="text-muted small mb-0">
-          Powered by iptv-org API |
-          Found ${total.toLocaleString()} playable channels
-        </p>
-
+      <div class="brand-logo">
+        <img src="gtv-logo.svg" alt="GTV">
       </div>
 
-      <div class="col-md-5 mt-3 mt-md-0">
-
-        <form id="filter-form" method="GET">
-
-          <div class="input-group">
-
-            <input
-              type="text"
-              name="search"
-              class="form-control glass-control"
-              placeholder="Search for a channel..."
-              value="${escapeHtml(search, true)}"
-            >
-
-            <div class="country-picker">
-
-              <input
-                type="hidden"
-                name="country"
-                value="${escapeHtml(country, true)}"
-              >
-
-              <button
-                type="button"
-                id="country-picker-toggle"
-                class="country-picker-toggle glass-control"
-              >
-
-                <span>
-                  ${
-                    country
-                      ? `<img
-                          src="https://flagcdn.com/20x15/${country.toLowerCase()}.png"
-                          alt="${escapeHtml(
-                            countryFlag(country),
-                            true
-                          )} flag"
-                          width="20"
-                          height="15"
-                        >`
-                      : ''
-                  }
-
-                  ${escapeHtml(selectedCountryName)}
-                </span>
-
-                <span aria-hidden="true">
-                  &#9662;
-                </span>
-
-              </button>
-
-              <div
-                id="country-picker-menu"
-                class="country-picker-menu"
-                hidden
-              >
-
-                <button
-                  type="button"
-                  class="country-option"
-                  data-country=""
-                >
-                  All countries
-                </button>
-
-                ${countryPickerOptions}
-
-              </div>
-
-            </div>
-
-            <select
-              name="category"
-              class="form-select glass-control"
-            >
-
-              <option value="">
-                📺 All categories
-              </option>
-
-              ${Object.entries(categories)
-                .map(
-                  ([id, name]) =>
-                    `<option
-                      value="${escapeHtml(id, true)}"
-                      ${
-                        category === id
-                          ? 'selected'
-                          : ''
-                      }
-                    >
-                      ${categoryIcon(name)}
-                      ${escapeHtml(name)}
-                    </option>`
-                )
-                .join('')}
-
-            </select>
-
-            <button
-              class="btn btn-primary"
-              type="submit"
-            >
-              Search
-            </button>
-
-            ${
-              search || country || category
-                ? `<a
-                    href="/"
-                    class="btn btn-outline-secondary clear"
-                    onclick="const form=this.closest('form');form.elements.search.value='';form.elements.country.value='';form.elements.category.value='';form.querySelector('#country-picker-toggle span').textContent='All countries'"
-                  >
-                    Clear
-                  </a>`
-                : ''
-            }
-
-          </div>
-
-        </form>
-
+      <div>
+        <h1>Global IPTV</h1>
+        <p>
+          Live television from around the world
+          <span class="live-dot"></span>
+        </p>
       </div>
 
     </div>
 
+    <div class="channel-count">
+      <strong>${total.toLocaleString()}</strong>
+      <span>Live Channels</span>
+    </div>
 
-    <div class="row">
+  </header>
+
+
+  <!-- FILTER BAR -->
+
+  <section class="filter-panel">
+
+    <form id="filter-form">
+
+      <div class="search-box">
+
+        <span class="search-icon">⌕</span>
+
+        <input
+          type="text"
+          name="search"
+          class="modern-input"
+          placeholder="Search channels..."
+          value="${escapeHtml(search,true)}"
+          autocomplete="off"
+        >
+
+      </div>
+
+
+      <div class="country-picker">
+
+        <input
+          type="hidden"
+          name="country"
+          value="${escapeHtml(country,true)}"
+        >
+
+        <button
+          type="button"
+          id="country-picker-toggle"
+          class="filter-control"
+        >
+
+          <span>
+
+            ${
+              country
+                ?`
+                  <img
+                    src="https://flagcdn.com/20x15/${country.toLowerCase()}.png"
+                    alt="${escapeHtml(countryFlag(country),true)} flag"
+                    width="20"
+                    height="15"
+                  >
+                `
+                :''
+            }
+
+            ${escapeHtml(selectedCountryName)}
+
+          </span>
+
+          <span>🔻</span>
+
+        </button>
+
+
+        <div
+          id="country-picker-menu"
+          class="country-picker-menu"
+          hidden
+        >
+
+          <button
+            type="button"
+            class="country-option"
+            data-country=""
+          >
+            🌎 All countries
+          </button>
+
+          ${countryPickerOptions}
+
+        </div>
+
+      </div>
+
+
+      <select
+        name="category"
+        class="filter-control category-select"
+      >
+
+        <option value="">
+          📺 All categories
+        </option>
+
+        ${
+          Object.entries(categories)
+            .map(([id,name])=>
+              `
+              <option
+                value="${escapeHtml(id,true)}"
+                ${category===id?'selected':''}
+              >
+                ${categoryIcon(name)}
+                ${escapeHtml(name)}
+              </option>
+              `
+            ).join('')
+        }
+
+      </select>
+
+      <button
+        class="search-button"
+        type="submit"
+      >
+        Search
+      </button>
+
+
+      ${
+        search||country||category
+          ?`
+            <a
+              href="/"
+              class="clear-button"
+              onclick="
+                const form=this.closest('form');
+                form.elements.search.value='';
+                form.elements.country.value='';
+                form.elements.category.value='';
+                form.querySelector('#country-picker-toggle span').textContent='All countries';
+              "
+            >
+              Clear
+            </a>
+          `
+          :''
+      }
+
+    </form>
+
+  </section>
+
+
+  <!-- MAIN CONTENT -->
+
+  <main>
+
+    <div class="row gx-4">
+
+      <!-- PLAYER -->
 
       <div class="col-lg-5 mb-4">
 
         <div id="player-wrapper">
 
-          <div data-shaka-player-container>
+          <div
+            data-shaka-player-container
+            shaka-controls="true"
+          >
 
             <video
               data-shaka-player
@@ -657,31 +655,42 @@ function renderPage({
 
           </div>
 
+
           <div class="p-3 player-meta">
 
             <div
               class="d-flex align-items-center justify-content-between gap-2"
             >
 
-              <h5
-                id="now-playing-title"
-                class="m-0 text-truncate"
-              >
-                Select a channel to play
-              </h5>
+              <div class="now-playing-info">
+
+                <span class="now-label">
+                  NOW PLAYING
+                </span>
+
+                <h5
+                  id="now-playing-title"
+                  class="m-0 text-truncate"
+                >
+                  Select a channel to play
+                </h5>
+
+              </div>
+
 
               <small
                 id="now-playing-status"
-                class="text-muted"
+                class="text-muted status-text"
               >
                 Waiting...
               </small>
 
             </div>
 
+
             <div
               id="now-playing-program"
-              class="small text-light text-truncate mt-1"
+              class="small text-light text-truncate mt-2"
               aria-live="polite"
             ></div>
 
@@ -692,7 +701,38 @@ function renderPage({
       </div>
 
 
+      <!-- CHANNEL GRID -->
+
       <div class="col-lg-7">
+
+        <div class="section-heading">
+
+          <div>
+
+            <span class="section-kicker">
+              LIVE TV
+            </span>
+
+            <h2>
+              ${
+                search
+                  ?`Search results for "${escapeHtml(search)}"`
+                  :country
+                    ?escapeHtml(selectedCountryName)
+                    :category
+                      ?escapeHtml(categories[category]||category)
+                      :'Explore Channels'
+              }
+            </h2>
+
+          </div>
+
+          <span class="result-count">
+            ${total.toLocaleString()} channels
+          </span>
+
+        </div>
+
 
         <div
           id="channel-list"
@@ -700,6 +740,7 @@ function renderPage({
         >
           ${cards}
         </div>
+
 
         <div id="pagination-container">
           ${pageLinks}
@@ -709,39 +750,1299 @@ function renderPage({
 
     </div>
 
-  </div>
+  </main>
 
-  <script>
-    ${clientScript()}
-  </script>
+</div>
+
+
+<script>
+${clientScript()}
+</script>
 
 </body>
+
 </html>`;
 }
 
 
-function styles() {
-  return `:root{--glass:#121920c7;--border:#ffffff33}body{position:relative;min-height:100vh;overflow-x:hidden;background:#1a1e23;color:#fff}.background-animation{display:none}.container{position:relative;z-index:1}.logo img{height:3rem;width:auto;vertical-align:bottom}.glass-panel,#player-wrapper,.channel-card{background:var(--glass);border:1px solid var(--border);border-radius:1rem;box-shadow:0 1.5rem 3rem #0003;backdrop-filter:blur(1.25rem)}.h2,h2{font-size:calc(1.25rem + .9vw);font-family:fantasy}.header-panel{position:relative;z-index:30;padding:1.25rem}.glass-control{background:#ffffff17!important;border:1px solid var(--border)!important;color:#f8fafc!important}.glass-control::placeholder{color:#ffffff9e}.glass-control option{background:#202b34}.card{color:#dce7ef}.country-picker{position:relative;z-index:31;flex:1 1 auto;width:1%;min-width:0}.country-picker-toggle{width:100%;height:100%;display:flex;align-items:center;justify-content:space-between;gap:.5rem;text-align:left;border-radius:0!important;white-space:nowrap;overflow:hidden}.country-picker-toggle span:first-child{overflow:hidden;text-overflow:ellipsis}.country-picker-toggle img,.country-option img{vertical-align:middle;margin-right:.25rem}.country-picker-menu{position:absolute;top:calc(100% + .25rem);left:0;right:0;z-index:40;max-height:18rem;overflow-y:auto;padding:.25rem;background:#202b34;border:1px solid var(--border);border-radius:.375rem;box-shadow:0 .75rem 1.5rem #0008;width:fit-content}.country-option{display:block;width:100%;padding:.4rem .5rem;border:0;background:transparent;color:#f8fafc;text-align:left;white-space:nowrap}.country-option:hover,.country-option:focus{background:#ffffff24}.channel-card{cursor:pointer;transition:.25s}.channel-card:hover{background:#ffffff2b;border-color:#7dd3fcb8;transform:translateY(-.25rem)}.logo-container{height:80px;display:flex;align-items:center;justify-content:center;background:#030000;padding:5px;border-radius:12px}.channel-logo{max-height:100%;max-width:100%;object-fit:contain}#player-wrapper{position:sticky;top:20px;z-index:2;overflow:hidden}video{width:100%;aspect-ratio:16/9;background:#000}.pagination{justify-content:center;flex-wrap:wrap}.page-link{background:#ffffff05;border-color:var(--border);color:#fff}.page-item.active .page-link{background:#38bdf880;border-color:#7dd3fcbf}.text-muted{color:#aaa!important}.player-meta{background:#0000003d!important}.live-status{display:inline-flex;align-items:center;gap:.35rem}.live-status::before{content:'';width:.5rem;height:.5rem;border-radius:50%;background:#21c55d;box-shadow:0 0 .4rem #21c55dcc;flex:0 0 .5rem}@media(max-width:768px){.container{padding-left:1rem;padding-right:1rem}.input-group{flex-wrap:wrap;gap:.5rem}.input-group>*{flex:1 1 100%;border-radius:.375rem!important}.country-picker{width:100%}.country-picker-toggle{border-radius:.375rem!important}}`;
+function styles(){
+
+return `
+
+:root{
+  --bg:#07090d;
+  --panel:#10141b;
+  --panel2:#151a22;
+  --border:rgba(255,255,255,.09);
+  --text:#f5f7fa;
+  --muted:#8d96a3;
+  --accent:#e51b23;
+  --accent2:#ff3440;
+  --success:#24d17e;
+}
+
+*{
+  box-sizing:border-box;
+}
+
+html{
+  scroll-behavior:smooth;
+}
+
+body{
+  margin:0;
+  min-height:100vh;
+  overflow-x:hidden;
+  color:var(--text);
+  background:
+    radial-gradient(
+      circle at 75% 5%,
+      rgba(229,27,35,.10),
+      transparent 28%
+    ),
+    radial-gradient(
+      circle at 10% 50%,
+      rgba(255,255,255,.025),
+      transparent 25%
+    ),
+    var(--bg);
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+.ambient{
+  position:fixed;
+  pointer-events:none;
+  filter:blur(100px);
+  opacity:.16;
+  z-index:0;
+}
+
+.ambient-one{
+  width:300px;
+  height:300px;
+  background:#e51b23;
+  top:-150px;
+  right:10%;
+}
+
+.ambient-two{
+  width:250px;
+  height:250px;
+  background:#6d28d9;
+  bottom:-100px;
+  left:5%;
+}
+
+.main-container{
+  position:relative;
+  z-index:1;
+  max-width:1600px;
+  margin:auto;
+  padding:26px 30px 60px;
 }
 
 
-function clientScript() {
-  return `const video=document.getElementById('video-player'),titleEl=document.getElementById('now-playing-title'),statusEl=document.getElementById('now-playing-status'),programEl=document.getElementById('now-playing-program');let shakaPlayer,pendingStream;function updateProgram(name){programEl.textContent=name?'Now playing: '+name:''}async function loadStream(url){if(!shakaPlayer){pendingStream={url};return}try{await shakaPlayer.load(url);statusEl.textContent='Live';statusEl.className='text-success live-status'}catch(error){console.error(error);statusEl.textContent='Stream unavailable';statusEl.className='text-danger'}}async function init(){const ui=video.ui;if(!ui){statusEl.textContent='Player unavailable';return}shakaPlayer=ui.getControls().getPlayer();shakaPlayer.addEventListener('error',()=>{statusEl.textContent='Stream unavailable';statusEl.className='text-danger'});if(pendingStream){const stream=pendingStream;pendingStream=null;loadStream(stream.url)}}document.addEventListener('shaka-ui-loaded',init);const countryPicker=document.getElementById('country-picker-toggle'),countryMenu=document.getElementById('country-picker-menu');if(countryPicker&&countryMenu){countryPicker.addEventListener('click',()=>{countryMenu.hidden=!countryMenu.hidden});countryMenu.addEventListener('click',event=>{const option=event.target.closest('.country-option');if(!option)return;const code=option.dataset.country,hidden=countryPicker.closest('form').querySelector('[name="country"]');hidden.value=code;countryPicker.querySelector('span').innerHTML=code?'<img src="https://flagcdn.com/20x15/'+code.toLowerCase()+'.png" alt="Country flag" width="20" height="15"> '+option.textContent.trim():'All countries';countryMenu.hidden=true});document.addEventListener('click',event=>{if(!countryPicker.contains(event.target)&&!countryMenu.contains(event.target))countryMenu.hidden=true})}async function loadPage(url,updateHistory=true){const channelList=document.getElementById('channel-list'),pagination=document.getElementById('pagination-container');channelList.setAttribute('aria-busy','true');try{const response=await fetch(url,{headers:{'X-Requested-With':'XMLHttpRequest'}});if(!response.ok)throw new Error('Page request failed');const documentFragment=new DOMParser().parseFromString(await response.text(),'text/html'),nextList=documentFragment.getElementById('channel-list'),nextPagination=documentFragment.getElementById('pagination-container');if(!nextList||!nextPagination)throw new Error('Missing page content');channelList.innerHTML=nextList.innerHTML;pagination.replaceWith(nextPagination);if(updateHistory)history.pushState({},'',url)}catch(error){console.error(error);location.href=url}finally{channelList.removeAttribute('aria-busy')}}document.addEventListener('click',event=>{const link=event.target.closest('#pagination-container a.page-link,#filter-form a.clear');if(!link)return;event.preventDefault();loadPage(link.href)});function playStream(url,name,id,program,scroll=true){titleEl.textContent=name;statusEl.textContent='Connecting to stream...';statusEl.className='text-info';updateProgram(program);sessionStorage.setItem('iptv-current-stream',JSON.stringify({url,name,id,program}));if(scroll)window.scrollTo({top:0,behavior:'smooth'});loadStream(url)}document.getElementById('filter-form').addEventListener('submit',event=>{event.preventDefault();const url=new URL(location.href);url.search=new URLSearchParams(new FormData(event.target));url.searchParams.set('page','1');loadPage(url.toString())});window.addEventListener('popstate',()=>loadPage(location.href,false));const saved=sessionStorage.getItem('iptv-current-stream');if(saved){try{const stream=JSON.parse(saved);if(stream.url&&stream.name)playStream(stream.url,stream.name,stream.id,stream.program||'',false)}catch(error){sessionStorage.removeItem('iptv-current-stream')}}`;
+/* HEADER */
+
+.top-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:20px;
+  padding:8px 4px 24px;
+}
+
+.brand-area{
+  display:flex;
+  align-items:center;
+  gap:14px;
+}
+
+.brand-logo{
+  width:48px;
+  height:48px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:14px;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255,255,255,.12),
+      rgba(255,255,255,.025)
+    );
+  border:1px solid var(--border);
+  box-shadow:0 10px 35px rgba(0,0,0,.35);
+  overflow:hidden;
+}
+
+.brand-logo img{
+  width:36px;
+  height:auto;
+}
+
+.brand-area h1{
+  margin:0;
+  font-size:1.55rem;
+  font-weight:750;
+  letter-spacing:-.04em;
+}
+
+.brand-area p{
+  margin:3px 0 0;
+  color:var(--muted);
+  font-size:.78rem;
+}
+
+.live-dot{
+  display:inline-block;
+  width:6px;
+  height:6px;
+  margin-left:5px;
+  vertical-align:middle;
+  border-radius:50%;
+  background:var(--success);
+  box-shadow:0 0 10px var(--success);
+}
+
+.channel-count{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-end;
+}
+
+.channel-count strong{
+  font-size:1.2rem;
+  font-weight:750;
+}
+
+.channel-count span{
+  color:var(--muted);
+  font-size:.7rem;
+  text-transform:uppercase;
+  letter-spacing:.08em;
 }
 
 
-module.exports = async function handler(req, res) {
+/* FILTER */
 
-  const requestUrl = new URL(
-    req.url || '/',
-    `https://${req.headers.host || 'localhost'}`
+.filter-panel{
+  position:relative;
+  z-index:30;
+  margin-bottom:28px;
+  padding:10px;
+  border:1px solid var(--border);
+  border-radius:17px;
+  background:rgba(17,21,28,.82);
+  box-shadow:
+    0 15px 50px rgba(0,0,0,.25);
+  backdrop-filter:blur(25px);
+}
+
+.filter-panel form{
+  display:flex;
+  gap:8px;
+  align-items:stretch;
+}
+
+.search-box{
+  position:relative;
+  flex:2 1 280px;
+}
+
+.search-icon{
+  position:absolute;
+  left:15px;
+  top:50%;
+  transform:translateY(-50%);
+  color:#9da5b1;
+  font-size:20px;
+  pointer-events:none;
+}
+
+.modern-input,
+.filter-control{
+  width:100%;
+  min-height:44px;
+  border:1px solid rgba(255,255,255,.07);
+  outline:none;
+  color:#fff;
+  background:#ffffff08;
+  transition:.2s ease;
+}
+
+.modern-input{
+  padding:0 15px 0 43px;
+  border-radius:11px;
+}
+
+.modern-input::placeholder{
+  color:#737d89;
+}
+
+.modern-input:focus,
+.filter-control:focus{
+  border-color:rgba(229,27,35,.65);
+  background:#ffffff0d;
+  box-shadow:0 0 0 3px rgba(229,27,35,.08);
+}
+
+.country-picker{
+  position:relative;
+  flex:1 1 180px;
+  min-width:0;
+}
+
+.filter-control{
+  padding:0 13px;
+  border-radius:11px;
+  text-align:left;
+}
+
+button.filter-control{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+
+.filter-control span:first-child{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.filter-control img{
+  vertical-align:middle;
+  margin-right:5px;
+}
+
+.category-select{
+  flex:1 1 180px;
+  appearance:auto;
+}
+
+.category-select option{
+  color:#fff;
+  background:#161b23;
+}
+
+.search-button{
+  min-width:90px;
+  padding:0 20px;
+  border:0;
+  border-radius:11px;
+  color:#fff;
+  background:
+    linear-gradient(
+      135deg,
+      var(--accent),
+      var(--accent2)
+    );
+  font-weight:700;
+  transition:.2s ease;
+  box-shadow:0 8px 25px rgba(229,27,35,.18);
+}
+
+.search-button:hover{
+  transform:translateY(-1px);
+  box-shadow:0 12px 30px rgba(229,27,35,.28);
+}
+
+.clear-button{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:0 14px;
+  color:#adb5c0;
+  text-decoration:none;
+  border:1px solid var(--border);
+  border-radius:11px;
+  font-size:.85rem;
+  transition:.2s;
+}
+
+.clear-button:hover{
+  color:#fff;
+  background:#ffffff08;
+}
+
+
+/* COUNTRY MENU */
+
+.country-picker-menu{
+  position:absolute;
+  top:calc(100% + 7px);
+  left:0;
+  min-width:230px;
+  max-height:320px;
+  overflow-y:auto;
+  z-index:100;
+  padding:6px;
+  border:1px solid rgba(255,255,255,.10);
+  border-radius:12px;
+  background:#141920;
+  box-shadow:
+    0 20px 50px rgba(0,0,0,.55);
+  backdrop-filter:blur(25px);
+}
+
+.country-option{
+  display:block;
+  width:100%;
+  padding:9px 10px;
+  border:0;
+  border-radius:8px;
+  color:#e9edf2;
+  background:transparent;
+  text-align:left;
+  white-space:nowrap;
+  transition:.15s;
+}
+
+.country-option:hover,
+.country-option:focus{
+  color:#fff;
+  background:#ffffff0d;
+}
+
+.country-option img{
+  vertical-align:middle;
+  margin-right:5px;
+}
+
+
+/* PLAYER */
+
+#player-wrapper{
+  position:sticky;
+  top:20px;
+  z-index:2;
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,.10);
+  border-radius:18px;
+  background:#080a0e;
+  box-shadow:
+    0 25px 70px rgba(0,0,0,.50),
+    0 0 0 1px rgba(255,255,255,.02);
+}
+
+#player-wrapper
+[data-shaka-player-container]{
+  position:relative;
+  width:100%;
+  background:#000;
+  aspect-ratio:16/9;
+}
+
+#video-player{
+  width:100%;
+  height:100%;
+  aspect-ratio:16/9;
+  display:block;
+  background:#000;
+}
+
+.player-meta{
+  background:
+    linear-gradient(
+      180deg,
+      #131820,
+      #0d1117
+    ) !important;
+  border-top:1px solid rgba(255,255,255,.06);
+}
+
+.now-playing-info{
+  min-width:0;
+}
+
+.now-label{
+  display:block;
+  margin-bottom:4px;
+  color:#7e8793;
+  font-size:.62rem;
+  font-weight:800;
+  letter-spacing:.12em;
+}
+
+#now-playing-title{
+  color:#fff;
+  font-size:1rem;
+  font-weight:700;
+}
+
+#now-playing-status{
+  padding:5px 10px;
+  border-radius:20px;
+  background:#ffffff08;
+  font-size:.72rem;
+  white-space:nowrap;
+}
+
+.live-status{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  color:var(--success)!important;
+}
+
+.live-status::before{
+  content:'';
+  width:6px;
+  height:6px;
+  border-radius:50%;
+  background:var(--success);
+  box-shadow:0 0 9px var(--success);
+}
+
+#now-playing-program{
+  min-height:18px;
+  color:#b9c1cb!important;
+}
+
+.player-footer{
+  display:flex;
+  justify-content:space-between;
+  margin-top:12px;
+  padding-top:10px;
+  border-top:1px solid rgba(255,255,255,.06);
+  color:#6f7885;
+  font-size:.66rem;
+  text-transform:uppercase;
+  letter-spacing:.07em;
+}
+
+.player-footer i{
+  display:inline-block;
+  width:5px;
+  height:5px;
+  margin-right:5px;
+  border-radius:50%;
+  background:var(--success);
+}
+
+
+/* SHAKA */
+
+#player-wrapper
+.shaka-controls-container{
+  font-family:inherit;
+}
+
+#player-wrapper
+.shaka-bottom-controls{
+  padding:0 12px 10px;
+}
+
+#player-wrapper
+.shaka-overflow-menu,
+#player-wrapper
+.shaka-settings-menu{
+  border-radius:12px;
+  overflow:hidden;
+}
+
+
+/* SECTION */
+
+.section-heading{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:20px;
+  margin:5px 2px 18px;
+}
+
+.section-kicker{
+  display:block;
+  margin-bottom:4px;
+  color:#707a87;
+  font-size:.65rem;
+  font-weight:800;
+  letter-spacing:.13em;
+}
+
+.section-heading h2{
+  margin:0;
+  color:#fff;
+  font-size:1.35rem;
+  font-weight:750;
+  letter-spacing:-.03em;
+}
+
+.result-count{
+  color:#6f7885;
+  font-size:.72rem;
+}
+
+
+/* CHANNEL CARDS */
+
+.channel-card{
+  height:100%;
+  overflow:hidden;
+  cursor:pointer;
+  border:1px solid rgba(255,255,255,.075);
+  border-radius:14px;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(25,30,38,.96),
+      rgba(14,18,24,.96)
+    );
+  box-shadow:0 8px 25px rgba(0,0,0,.20);
+  transition:
+    transform .22s ease,
+    border-color .22s ease,
+    box-shadow .22s ease,
+    background .22s ease;
+}
+
+.channel-card:hover{
+  transform:translateY(-4px);
+  border-color:rgba(229,27,35,.42);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(34,39,48,.98),
+      rgba(16,20,27,.98)
+    );
+  box-shadow:
+    0 16px 35px rgba(0,0,0,.38),
+    0 0 25px rgba(229,27,35,.06);
+}
+
+.channel-card:active{
+  transform:translateY(-1px);
+}
+
+.channel-logo-wrap{
+  position:relative;
+  height:105px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:13px;
+  overflow:hidden;
+  background:
+    radial-gradient(
+      circle at center,
+      rgba(255,255,255,.07),
+      transparent 65%
+    ),
+    #080a0e;
+}
+
+.channel-logo{
+  width:100%;
+  height:100%;
+  object-fit:contain;
+  transition:transform .25s ease;
+}
+
+.channel-card:hover .channel-logo{
+  transform:scale(1.045);
+}
+
+.channel-play{
+  position:absolute;
+  right:9px;
+  bottom:8px;
+  width:29px;
+  height:29px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:50%;
+  color:#fff;
+  background:rgba(229,27,35,.92);
+  box-shadow:0 5px 15px rgba(0,0,0,.45);
+  opacity:0;
+  transform:scale(.75);
+  transition:.2s ease;
+}
+
+.channel-card:hover .channel-play{
+  opacity:1;
+  transform:scale(1);
+}
+
+.channel-play span{
+  margin-left:2px;
+  font-size:11px;
+}
+
+.channel-info{
+  padding:11px 12px 12px;
+}
+
+.channel-name{
+  overflow:hidden;
+  margin-bottom:6px;
+  color:#f4f6f8;
+  font-size:.84rem;
+  font-weight:700;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.channel-meta{
+  display:flex;
+  align-items:center;
+  gap:5px;
+  min-width:0;
+  overflow:hidden;
+  color:#798390;
+  font-size:.68rem;
+  white-space:nowrap;
+}
+
+.channel-meta span{
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+.channel-tags{
+  display:flex;
+  gap:4px;
+  overflow:hidden;
+  margin-top:8px;
+}
+
+.channel-category{
+  max-width:100%;
+  padding:3px 6px;
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,.06);
+  border-radius:5px;
+  color:#737d89;
+  background:#ffffff04;
+  font-size:.57rem;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+
+/* EMPTY */
+
+.empty-state{
+  padding:70px 20px;
+  text-align:center;
+  border:1px dashed rgba(255,255,255,.10);
+  border-radius:16px;
+  background:#ffffff03;
+}
+
+.empty-icon{
+  margin-bottom:10px;
+  font-size:38px;
+  opacity:.6;
+}
+
+.empty-state h4{
+  font-size:1rem;
+}
+
+.empty-state p{
+  margin:0;
+  color:#727c89;
+  font-size:.8rem;
+}
+
+
+/* PAGINATION */
+
+.pagination{
+  justify-content:center;
+  gap:5px;
+}
+
+.page-link{
+  min-width:36px;
+  border:1px solid var(--border);
+  border-radius:9px!important;
+  color:#aab2bd;
+  background:#ffffff04;
+  text-align:center;
+}
+
+.page-link:hover{
+  color:#fff;
+  background:#ffffff0b;
+  border-color:rgba(229,27,35,.3);
+}
+
+.page-item.active .page-link{
+  color:#fff;
+  border-color:var(--accent);
+  background:var(--accent);
+  box-shadow:0 5px 20px rgba(229,27,35,.2);
+}
+
+
+/* MOBILE */
+
+@media(max-width:991px){
+
+  #player-wrapper{
+    position:relative;
+    top:0;
+  }
+
+  .section-heading{
+    margin-top:10px;
+  }
+
+}
+
+@media(max-width:768px){
+
+  .main-container{
+    padding:15px 12px 40px;
+  }
+
+  .top-header{
+    padding-bottom:17px;
+  }
+
+  .brand-area h1{
+    font-size:1.25rem;
+  }
+
+  .brand-area p{
+    font-size:.68rem;
+  }
+
+  .channel-count{
+    display:none;
+  }
+
+  .filter-panel{
+    padding:8px;
+  }
+
+  .filter-panel form{
+    flex-wrap:wrap;
+  }
+
+  .search-box,
+  .country-picker,
+  .category-select,
+  .search-button,
+  .clear-button{
+    flex:1 1 100%;
+    width:100%;
+  }
+
+  .search-button,
+  .clear-button{
+    min-height:43px;
+  }
+
+  .channel-logo-wrap{
+    height:85px;
+  }
+
+  .channel-info{
+    padding:9px;
+  }
+
+  .channel-name{
+    font-size:.76rem;
+  }
+
+  .channel-category{
+    display:none;
+  }
+
+  .section-heading h2{
+    font-size:1.1rem;
+  }
+
+}
+
+@media(max-width:420px){
+
+  .brand-logo{
+    width:42px;
+    height:42px;
+  }
+
+  .brand-logo img{
+    width:31px;
+  }
+
+  .channel-logo-wrap{
+    height:78px;
+  }
+
+  .channel-card{
+    border-radius:11px;
+  }
+
+}
+
+`;
+}
+
+
+function clientScript(){
+
+return `
+
+const video=document.getElementById('video-player');
+
+const titleEl=
+  document.getElementById('now-playing-title');
+
+const statusEl=
+  document.getElementById('now-playing-status');
+
+const programEl=
+  document.getElementById('now-playing-program');
+
+let shakaPlayer;
+let pendingStream;
+
+
+function updateProgram(name){
+  programEl.textContent=
+    name?'Now playing: '+name:'';
+}
+
+
+async function loadStream(url){
+
+  if(!shakaPlayer){
+    pendingStream={url};
+    return;
+  }
+
+  try{
+
+    statusEl.textContent='Connecting...';
+    statusEl.className='text-info';
+
+    await shakaPlayer.load(url);
+
+    statusEl.textContent='Live';
+    statusEl.className=
+      'text-success live-status';
+
+  }catch(error){
+
+    console.error(error);
+
+    statusEl.textContent='Stream unavailable';
+    statusEl.className='text-danger';
+
+  }
+
+}
+
+
+async function init(){
+
+  const ui=video.ui;
+
+  if(!ui){
+
+    statusEl.textContent='Player unavailable';
+    return;
+
+  }
+
+  shakaPlayer=
+    ui.getControls().getPlayer();
+
+  shakaPlayer.addEventListener(
+    'error',
+    ()=>{
+      statusEl.textContent=
+        'Stream unavailable';
+
+      statusEl.className=
+        'text-danger';
+    }
   );
 
-  if (requestUrl.pathname === '/gtv-logo.svg') {
-    try {
-      const logo = await fs.readFile(
-        path.join(DATA_ROOT, 'gtv-logo.svg')
+  if(pendingStream){
+
+    const stream=pendingStream;
+
+    pendingStream=null;
+
+    loadStream(stream.url);
+
+  }
+
+}
+
+
+document.addEventListener(
+  'shaka-ui-loaded',
+  init
+);
+
+
+/* COUNTRY PICKER */
+
+const countryPicker=
+  document.getElementById(
+    'country-picker-toggle'
+  );
+
+const countryMenu=
+  document.getElementById(
+    'country-picker-menu'
+  );
+
+
+if(countryPicker&&countryMenu){
+
+  countryPicker.addEventListener(
+    'click',
+    ()=>{
+      countryMenu.hidden=
+        !countryMenu.hidden;
+    }
+  );
+
+
+  countryMenu.addEventListener(
+    'click',
+    event=>{
+
+      const option=
+        event.target.closest(
+          '.country-option'
+        );
+
+      if(!option)return;
+
+      const code=
+        option.dataset.country;
+
+      const form=
+        countryPicker.closest('form');
+
+      const hidden=
+        form.querySelector(
+          '[name="country"]'
+        );
+
+      hidden.value=code;
+
+      countryPicker
+        .querySelector('span')
+        .innerHTML=
+          code
+            ?'<img src="https://flagcdn.com/20x15/'+
+              code.toLowerCase()+
+              '.png" alt="Country flag" width="20" height="15"> '+
+              option.textContent.trim()
+            :'🌎 All countries';
+
+      countryMenu.hidden=true;
+
+    }
+  );
+
+
+  document.addEventListener(
+    'click',
+    event=>{
+
+      if(
+        !countryPicker.contains(event.target)&&
+        !countryMenu.contains(event.target)
+      ){
+        countryMenu.hidden=true;
+      }
+
+    }
+  );
+
+}
+
+
+/* AJAX PAGE LOADING */
+
+async function loadPage(
+  url,
+  updateHistory=true
+){
+
+  const channelList=
+    document.getElementById(
+      'channel-list'
+    );
+
+  const pagination=
+    document.getElementById(
+      'pagination-container'
+    );
+
+  channelList.setAttribute(
+    'aria-busy',
+    'true'
+  );
+
+  try{
+
+    const response=
+      await fetch(
+        url,
+        {
+          headers:{
+            'X-Requested-With':
+              'XMLHttpRequest'
+          }
+        }
       );
+
+    if(!response.ok)
+      throw new Error(
+        'Page request failed'
+      );
+
+    const documentFragment=
+      new DOMParser()
+        .parseFromString(
+          await response.text(),
+          'text/html'
+        );
+
+    const nextList=
+      documentFragment
+        .getElementById(
+          'channel-list'
+        );
+
+    const nextPagination=
+      documentFragment
+        .getElementById(
+          'pagination-container'
+        );
+
+    if(!nextList||!nextPagination)
+      throw new Error(
+        'Missing page content'
+      );
+
+    channelList.innerHTML=
+      nextList.innerHTML;
+
+    pagination.replaceWith(
+      nextPagination
+    );
+
+    if(updateHistory)
+      history.pushState(
+        {},
+        '',
+        url
+      );
+
+    window.scrollTo({
+      top:0,
+      behavior:'smooth'
+    });
+
+  }catch(error){
+
+    console.error(error);
+
+    location.href=url;
+
+  }finally{
+
+    channelList.removeAttribute(
+      'aria-busy'
+    );
+
+  }
+
+}
+
+
+/* PAGINATION */
+
+document.addEventListener(
+  'click',
+  event=>{
+
+    const link=
+      event.target.closest(
+        '#pagination-container a.page-link,#filter-form a.clear'
+      );
+
+    if(!link)return;
+
+    event.preventDefault();
+
+    loadPage(link.href);
+
+  }
+);
+
+
+/* PLAY CHANNEL */
+
+function playStream(
+  url,
+  name,
+  id,
+  program,
+  scroll=true
+){
+
+  titleEl.textContent=name;
+
+  statusEl.textContent=
+    'Connecting...';
+
+  statusEl.className=
+    'text-info';
+
+  updateProgram(program);
+
+  sessionStorage.setItem(
+    'iptv-current-stream',
+    JSON.stringify({
+      url,
+      name,
+      id,
+      program
+    })
+  );
+
+  if(scroll){
+
+    window.scrollTo({
+      top:0,
+      behavior:'smooth'
+    });
+
+  }
+
+  loadStream(url);
+
+}
+
+
+/* FILTER */
+
+document
+  .getElementById('filter-form')
+  .addEventListener(
+    'submit',
+    event=>{
+
+      event.preventDefault();
+
+      const url=
+        new URL(location.href);
+
+      url.search=
+        new URLSearchParams(
+          new FormData(event.target)
+        );
+
+      url.searchParams.set(
+        'page',
+        '1'
+      );
+
+      loadPage(
+        url.toString()
+      );
+
+    }
+  );
+
+
+/* BROWSER BACK/FORWARD */
+
+window.addEventListener(
+  'popstate',
+  ()=>{
+    loadPage(
+      location.href,
+      false
+    );
+  }
+);
+
+
+/* RESTORE LAST CHANNEL */
+
+const saved=
+  sessionStorage.getItem(
+    'iptv-current-stream'
+  );
+
+
+if(saved){
+
+  try{
+
+    const stream=
+      JSON.parse(saved);
+
+    if(stream.url&&stream.name){
+
+      playStream(
+        stream.url,
+        stream.name,
+        stream.id,
+        stream.program||'',
+        false
+      );
+
+    }
+
+  }catch(error){
+
+    sessionStorage.removeItem(
+      'iptv-current-stream'
+    );
+
+  }
+
+}
+
+`;
+}
+
+
+module.exports=async function handler(req,res){
+
+  const requestUrl=
+    new URL(
+      req.url||'/',
+      `https://${req.headers.host||'localhost'}`
+    );
+
+
+  if(requestUrl.pathname==='/gtv-logo.svg'){
+
+    try{
+
+      const logo=
+        await fs.readFile(
+          path.join(
+            DATA_ROOT,
+            'gtv-logo.svg'
+          )
+        );
 
       res.setHeader(
         'Content-Type',
@@ -753,23 +2054,34 @@ module.exports = async function handler(req, res) {
         'public, max-age=86400'
       );
 
-      return res.status(200).send(logo);
+      return res
+        .status(200)
+        .send(logo);
 
-    } catch (_) {
-      return res.status(404).send('Logo not found');
+    }catch(_){
+
+      return res
+        .status(404)
+        .send('Logo not found');
+
     }
+
   }
 
-  const params = requestUrl.searchParams;
 
-  const [
+  const params=
+    requestUrl.searchParams;
+
+
+  const[
     channels,
     streams,
     logos,
     countryData,
     categoryData,
     epg
-  ] = await Promise.all([
+  ]=await Promise.all([
+
     readJson(
       `${API_ROOT}/channels.json`,
       'channels.json'
@@ -796,208 +2108,293 @@ module.exports = async function handler(req, res) {
     ),
 
     readEpg()
+
   ]);
 
-  const countryNames = Object.fromEntries(
-    countryData
-      .filter(item => item.code && item.name)
-      .map(item => [
-        item.code.toUpperCase(),
-        item.name
-      ])
-  );
 
-  const categoryNames = Object.fromEntries(
-    categoryData
-      .filter(item => item.id && item.name)
-      .map(item => [
-        item.id,
-        item.name
-      ])
-  );
+  const countryNames=
+    Object.fromEntries(
+      countryData
+        .filter(
+          item=>item.code&&item.name
+        )
+        .map(
+          item=>[
+            item.code.toUpperCase(),
+            item.name
+          ]
+        )
+    );
 
-  const streamMap = streams
-    .filter(item => item.channel && item.url)
-    .reduce((map, item) => {
 
-      if (!map[item.channel]) {
-        map[item.channel] = [];
-      }
+  const categoryNames=
+    Object.fromEntries(
+      categoryData
+        .filter(
+          item=>item.id&&item.name
+        )
+        .map(
+          item=>[
+            item.id,
+            item.name
+          ]
+        )
+    );
 
-      map[item.channel].push(item.url);
 
-      return map;
+  const streamMap=
+    streams
+      .filter(
+        item=>item.channel&&item.url
+      )
+      .reduce(
+        (map,item)=>{
 
-    }, {});
+          if(!map[item.channel])
+            map[item.channel]=[];
 
-  const logoMap = {};
+          map[item.channel].push(
+            item.url
+          );
+
+          return map;
+
+        },
+        {}
+      );
+
+
+  const logoMap={};
+
 
   logos
-    .filter(item => item.channel && item.url)
-    .forEach(item => {
-
-      if (!logoMap[item.channel] || item.in_use) {
-        logoMap[item.channel] = item.url;
-      }
-
-    });
-
-  let playable = channels
     .filter(
-      item =>
-        item.id &&
-        streamMap[item.id]
+      item=>item.channel&&item.url
     )
-    .map(item => {
+    .forEach(
+      item=>{
 
-      const streamUrls =
-        streamMap[item.id];
+        if(
+          !logoMap[item.channel]||
+          item.in_use
+        ){
+          logoMap[item.channel]=
+            item.url;
+        }
 
-      const preferredUrl =
-        [...streamUrls].sort(
-          (firstUrl, secondUrl) => {
+      }
+    );
 
-            const firstPreferred =
-              firstUrl.includes(
-                'streams.tangotv.in'
-              )
-                ? 0
-                : 1;
 
-            const secondPreferred =
-              secondUrl.includes(
-                'streams.tangotv.in'
-              )
-                ? 0
-                : 1;
-
-            return (
-              firstPreferred -
-              secondPreferred
-            );
-          }
-        )[0];
-
-      return {
-        ...item,
-
-        stream_urls: streamUrls,
-
-        stream_url: preferredUrl,
-
-        logo: logoMap[item.id],
-
-        program_name:
-          epg.programs[item.id] ||
-          epg.byName[
-            (item.name || '')
-              .toLowerCase()
-              .replace(/[^a-z0-9]/g, '')
-          ] ||
-          ''
-      };
-    });
-
-  const allCountries = Object.fromEntries(
-    [
-      ...new Set(
-        playable
-          .map(
-            item =>
-              (item.country || '').toUpperCase()
-          )
-          .filter(Boolean)
+  let playable=
+    channels
+      .filter(
+        item=>
+          item.id&&
+          streamMap[item.id]
       )
-    ]
-      .sort()
-      .map(code => [
-        code,
-        countryNames[code] || code
-      ])
-  );
+      .map(item=>{
 
-  const allCategories = Object.fromEntries(
-    [
-      ...new Set(
-        playable
-          .flatMap(item =>
+        const streamUrls=
+          streamMap[item.id];
+
+        const preferredUrl=
+          [...streamUrls]
+            .sort(
+              (firstUrl,secondUrl)=>{
+
+                const firstPreferred=
+                  firstUrl.includes(
+                    'streams.tangotv.in'
+                  )?0:1;
+
+                const secondPreferred=
+                  secondUrl.includes(
+                    'streams.tangotv.in'
+                  )?0:1;
+
+                return(
+                  firstPreferred-
+                  secondPreferred
+                );
+
+              }
+            )[0];
+
+
+        return{
+
+          ...item,
+
+          stream_urls:
+            streamUrls,
+
+          stream_url:
+            preferredUrl,
+
+          logo:
+            logoMap[item.id],
+
+          program_name:
+            epg.programs[item.id]||
+            epg.byName[
+              (item.name||'')
+                .toLowerCase()
+                .replace(
+                  /[^a-z0-9]/g,
+                  ''
+                )
+            ]||
+            ''
+
+        };
+
+      });
+
+
+  const allCountries=
+    Object.fromEntries(
+
+      [
+        ...new Set(
+          playable
+            .map(
+              item=>
+                (item.country||'')
+                  .toUpperCase()
+            )
+            .filter(Boolean)
+        )
+      ]
+      .sort()
+      .map(
+        code=>[
+          code,
+          countryNames[code]||code
+        ]
+      )
+
+    );
+
+
+  const allCategories=
+    Object.fromEntries(
+
+      [
+        ...new Set(
+
+          playable
+            .flatMap(
+              item=>
+                Array.isArray(item.categories)
+                  ?item.categories
+                  :item.categories
+                    ?[item.categories]
+                    :[]
+            )
+            .filter(Boolean)
+
+        )
+      ]
+      .sort()
+      .map(
+        id=>[
+          id,
+          categoryNames[id]||id
+        ]
+      )
+
+    );
+
+
+  const search=
+    params.get('search')||'';
+
+  const country=
+    (
+      params.get('country')||''
+    ).toUpperCase();
+
+  const category=
+    params.get('category')||'';
+
+
+  if(search){
+
+    playable=
+      playable.filter(
+        item=>
+          (item.name||'')
+            .toLowerCase()
+            .includes(
+              search.toLowerCase()
+            )
+      );
+
+  }
+
+
+  if(country){
+
+    playable=
+      playable.filter(
+        item=>
+          (item.country||'')
+            .toUpperCase()===
+          country
+      );
+
+  }
+
+
+  if(category){
+
+    playable=
+      playable.filter(
+        item=>
+          (
             Array.isArray(item.categories)
-              ? item.categories
-              : [item.categories]
-          )
-          .filter(Boolean)
-      )
-    ]
-      .sort()
-      .map(id => [
-        id,
-        categoryNames[id] || id
-      ])
-  );
+              ?item.categories
+              :item.categories
+                ?[item.categories]
+                :[]
+          ).includes(category)
+      );
 
-  const search =
-    params.get('search') || '';
-
-  const country =
-    (params.get('country') || '')
-      .toUpperCase();
-
-  const category =
-    params.get('category') || '';
-
-  if (search) {
-    playable = playable.filter(
-      item =>
-        (item.name || '')
-          .toLowerCase()
-          .includes(search.toLowerCase())
-    );
   }
 
-  if (country) {
-    playable = playable.filter(
-      item =>
-        (item.country || '')
-          .toUpperCase() === country
+
+  const page=
+    Math.max(
+      1,
+      Number.parseInt(
+        params.get('page')||'1',
+        10
+      )||1
     );
-  }
 
-  if (category) {
-    playable = playable.filter(
-      item =>
-        (
-          Array.isArray(item.categories)
-            ? item.categories
-            : [item.categories]
-        ).includes(category)
+
+  const totalPages=
+    Math.ceil(
+      playable.length/48
     );
-  }
 
-  const page = Math.max(
-    1,
-    Number.parseInt(
-      params.get('page') || '1',
-      10
-    ) || 1
-  );
-
-  const totalPages =
-    Math.ceil(playable.length / 48);
 
   res.setHeader(
     'Content-Type',
     'text/html; charset=utf-8'
   );
 
+
   res
     .status(200)
     .send(
       renderPage({
-        channels: playable,
-        countries: allCountries,
-        categories: allCategories,
+        channels:playable,
+        countries:allCountries,
+        categories:allCategories,
         countryNames,
-        total: playable.length,
+        total:playable.length,
         page,
         totalPages,
         search,
@@ -1005,4 +2402,5 @@ module.exports = async function handler(req, res) {
         category
       })
     );
+
 };

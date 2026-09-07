@@ -7,7 +7,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "dev": "node local-server.js",
+    "dev": "node --watch local-server.js",
     "check": "node --check api/index.js"
   }
 }
