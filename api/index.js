@@ -282,7 +282,7 @@ function renderPage({
             <div class="channel-info">
 
               <div
-                class="channel-name"
+                class="channel-name text-center"
                 title="${escapeHtml(channel.name,true)}"
               >
                 ${escapeHtml(channel.name)}
@@ -423,30 +423,14 @@ function renderPage({
 <head>
 
 <meta charset="UTF-8">
-
-<meta
-  name="viewport"
-  content="width=device-width,initial-scale=1.0"
->
-
-<link
-  rel="icon"
-  href="/favicon.ico"
-  type="image/x-icon"
->
-
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<link rel="icon" href="/favicon.ico" type="image/x-icon">
 <title>Global IPTV</title>
-
-<link
-  href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
-  rel="stylesheet"
->
-
-<link
-  rel="stylesheet"
-  href="https://unpkg.com/shaka-player@4.15.5/dist/controls.css"
->
-
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/shaka-player@4.15.5/dist/controls.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Doppio+One&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/shaka-player@4.15.5/dist/shaka-player.ui.js"></script>
 
 <style>
@@ -473,7 +457,7 @@ ${styles()}
       </div>
 
       <div>
-        <h1>Global IPTV</h1>
+        <h1 class="doppio-one-regular">Global IPTV</h1>
         <p>
           Live television from around the world
         </p>
@@ -812,6 +796,12 @@ body{
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
+}
+
+.doppio-one-regular {
+  font-family: "Doppio One", sans-serif;
+  font-weight: 400;
+  font-style: normal;
 }
 
 .ambient{
@@ -1402,6 +1392,7 @@ button.filter-control{
   color:#798390;
   font-size:.68rem;
   white-space:nowrap;
+  justify-content: center;
 }
 
 .channel-meta span{
@@ -1414,6 +1405,7 @@ button.filter-control{
   gap:4px;
   overflow:hidden;
   margin-top:8px;
+  justify-content: center;
 }
 
 .channel-category{
@@ -1832,6 +1824,49 @@ async function loadPage(
           'pagination-container'
         );
 
+    const nextChannelCount=
+      documentFragment
+        .querySelector(
+          '.channel-count'
+        );
+
+    const nextResultCount=
+      documentFragment
+        .querySelector(
+          '.result-count'
+        );
+
+    const nextSectionTitle=
+      documentFragment
+        .querySelector(
+          '.section-heading h2'
+        );
+
+    const currentChannelCount=
+      document.querySelector(
+        '.channel-count'
+      );
+
+    const currentResultCount=
+      document.querySelector(
+        '.result-count'
+      );
+
+    const currentSectionTitle=
+      document.querySelector(
+        '.section-heading h2'
+      );
+
+    const currentClearButton=
+      document.querySelector(
+        '#filter-form .clear-button'
+      );
+
+    const nextClearButton=
+      documentFragment.querySelector(
+        '#filter-form .clear-button'
+      );
+
     if(!nextList||!nextPagination)
       throw new Error(
         'Missing page content'
@@ -1843,6 +1878,25 @@ async function loadPage(
     pagination.replaceWith(
       nextPagination
     );
+
+    if(nextChannelCount&&currentChannelCount)
+      currentChannelCount.innerHTML=
+        nextChannelCount.innerHTML;
+
+    if(nextResultCount&&currentResultCount)
+      currentResultCount.textContent=
+        nextResultCount.textContent;
+
+    if(nextSectionTitle&&currentSectionTitle)
+      currentSectionTitle.textContent=
+        nextSectionTitle.textContent;
+
+    if(currentClearButton&&!nextClearButton)
+      currentClearButton.remove();
+    else if(!currentClearButton&&nextClearButton)
+      document
+        .getElementById('filter-form')
+        .append(nextClearButton);
 
     if(updateHistory)
       history.pushState(
