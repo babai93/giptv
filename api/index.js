@@ -476,7 +476,6 @@ ${styles()}
         <h1>Global IPTV</h1>
         <p>
           Live television from around the world
-          <span class="live-dot"></span>
         </p>
       </div>
 
@@ -900,17 +899,6 @@ body{
   font-size:.78rem;
 }
 
-.live-dot{
-  display:inline-block;
-  width:6px;
-  height:6px;
-  margin-left:5px;
-  vertical-align:middle;
-  border-radius:50%;
-  background:var(--success);
-  box-shadow:0 0 10px var(--success);
-}
-
 .channel-count{
   display:flex;
   flex-direction:column;
@@ -928,7 +916,6 @@ body{
   text-transform:uppercase;
   letter-spacing:.08em;
 }
-
 
 /* FILTER */
 
@@ -1200,7 +1187,20 @@ button.filter-control{
   border-radius:50%;
   background:var(--success);
   box-shadow:0 0 9px var(--success);
+  animation:liveBlink 2s infinite;
 }
+
+@keyframes liveBlink{
+  0%,100%{
+    opacity:1;
+    box-shadow:0 0 10px var(--success);
+  }
+  50%{
+    opacity:.25;
+    box-shadow:0 0 2px var(--success);
+  }
+}
+
 
 #now-playing-program{
   min-height:18px;
