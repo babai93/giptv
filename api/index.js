@@ -5,7 +5,7 @@ const zlib=require('zlib');
 const DATA_ROOT=path.join(__dirname,'..');
 const CACHE_ROOT='/tmp/giptv-cache';
 const M3U_URL='https://iptv-org.github.io/iptv/index.m3u';
-const LOCAL_M3U_FILE=path.join(DATA_ROOT,'index.m3u');
+const LOCAL_M3U_FILE=path.join(DATA_ROOT,'index_file.m3u');
 const M3U_REFRESH_MS=6*60*60*1000;
 
 async function readM3u(){
