@@ -1185,9 +1185,8 @@ body{
 }
 
 #now-playing-program img{
-  width:30px;
-  height:30px;
-  margin-right:5px;
+  width:25px;
+  margin:-2px 0 0 -2px;
   vertical-align:middle;
 
   /* #b9c1cb */
