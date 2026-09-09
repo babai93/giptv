@@ -36,6 +36,32 @@ async function readM3u(){
   }
 }
 
+function splitExtinfLabel(line){
+  let inQuotes=false;
+  let quoteChar='';
+
+  for(let index=0; index<line.length; index++){
+    const char=line[index];
+
+    if((char==='"'||char==="'") && (quoteChar==='' || char===quoteChar)){
+      if(!inQuotes){
+        inQuotes=true;
+        quoteChar=char;
+      }else{
+        inQuotes=false;
+        quoteChar='';
+      }
+      continue;
+    }
+
+    if(char===',' && !inQuotes){
+      return line.slice(index+1).trim();
+    }
+  }
+
+  return '';
+}
+
 function parseM3u(m3uContent){
   const channels=[];
   let currentChannel=null;
@@ -46,7 +72,7 @@ function parseM3u(m3uContent){
     if(!line)continue;
 
     if(line.startsWith('#EXTINF:')){
-      const rawName=line.includes(',')?line.slice(line.indexOf(',')+1).trim():'';
+      const rawName=splitExtinfLabel(line);
       const qualityInfo=extractQualityFromName(rawName);
 
       const tvgId=attribute(line,'tvg-id')||'';
@@ -88,31 +114,39 @@ function parseM3u(m3uContent){
   return channels.filter(item=>item.name&&item.stream_url);
 }
 
-function extractQualityFromName(name){
-  const normalizedName=String(name||'').trim();
-  const match=normalizedName.match(/\s*\((\d{3,4}p)\)\s*$/i);
+function extractQualityFromName(name) {
+  const normalizedName = String(name || '').trim();
 
-  if(!match){
-    return{
-      name:normalizedName,
-      qualityBadge:''
+  const qualityMatch = normalizedName.match(/\((\d{3,4}[pi])\)/i);
+
+  if (!qualityMatch) {
+    return {
+      name: normalizedName
+        .replace(/\s*\[[^\]]+\]\s*$/g, '')
+        .trim(),
+      qualityBadge: ''
     };
   }
 
-  const quality=match[1].toLowerCase();
+  const quality = qualityMatch[1].toLowerCase();
 
-  const qualityBadge=(
-    quality==='1080p'
-      ?'FHD'
-      :quality==='720p'
-        ?'HD'
-        :quality==='576p'||quality==='480p'
-          ?'SD'
-          :quality.toUpperCase()
+  const qualityBadge = (
+    /1080p/i.test(quality) ? 'FHD' :
+    /720p/i.test(quality)  ? 'HD'  :
+    /(576p|480p|576i)/i.test(quality) ? 'SD' :
+    quality.toUpperCase()
   );
 
-  return{
-    name:normalizedName.replace(new RegExp(`\\s*\\((\\d{3,4}p)\\)\\s*$`, 'i'),'').trim(),
+  const baseName = normalizedName
+    .replace(
+      new RegExp(`\\s*\\(${qualityMatch[1]}\\)`, 'i'),
+      ''
+    )
+    .replace(/\s*\[[^\]]+\]\s*$/g, '')
+    .trim();
+
+  return {
+    name: baseName,
     qualityBadge
   };
 }
@@ -589,7 +623,9 @@ ${styles()}
     <div class="brand-area flex-grow-1">
 
       <div class="brand-logo">
+      <a href="/" aria-label="Global IPTV Home">
         <img src="gtv-logo.svg" alt="GTV">
+      </a>
       </div>
 
       <div>
@@ -832,6 +868,7 @@ ${styles()}
                 <h5
                   id="now-playing-title"
                   class="m-0 text-truncate"
+                  title="Select a channel to play"
                 >
                   Select a channel to play
                 </h5>
@@ -1356,6 +1393,7 @@ button.filter-control{
 }
 
 #now-playing-title{
+  display:block;
   color:#fff;
   font-size:1rem;
   font-weight:700;
@@ -2258,7 +2296,13 @@ function playStream(
   scroll=true
 ){
 
-  titleEl.textContent=name;
+  const cleanedName=
+    String(name||'')
+      .replace(/\s*\((\d{3,4}[pi])\)(?:\s*\[[^\]]+\])*\s*$/i, '')
+      .trim();
+
+  titleEl.textContent=cleanedName;
+  titleEl.title=cleanedName;
 
   statusEl.textContent=
     'Connecting...';
@@ -2272,7 +2316,7 @@ function playStream(
     'iptv-current-stream',
     JSON.stringify({
       url,
-      name,
+      name:cleanedName,
       id,
       program
     })
