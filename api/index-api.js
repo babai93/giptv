@@ -4,140 +4,29 @@ const zlib=require('zlib');
 
 const DATA_ROOT=path.join(__dirname,'..');
 const CACHE_ROOT='/tmp/giptv-cache';
-const M3U_URL='https://iptv-org.github.io/iptv/index.m3u';
-const LOCAL_M3U_FILE=path.join(DATA_ROOT,'index.m3u');
-const M3U_REFRESH_MS=6*60*60*1000;
+const API_ROOT='https://iptv-org.github.io/api';
 
-async function readM3u(){
+async function readJson(url,filename){
+  const cacheFile=path.join(CACHE_ROOT,filename);
   try{
-    const localStats=await fs.stat(LOCAL_M3U_FILE);
-    const localContent=await fs.readFile(LOCAL_M3U_FILE,'utf8');
-
-    if(Date.now()-localStats.mtimeMs<M3U_REFRESH_MS){
-      return localContent;
-    }
-  }catch(_){ }
-
+    const cached=await fs.readFile(cacheFile,'utf8');
+    const stat=await fs.stat(cacheFile);
+    if(Date.now()-stat.mtimeMs<24*60*60*1000)return JSON.parse(cached);
+  }catch(_){}
   try{
-    const response=await fetch(M3U_URL,{headers:{'User-Agent':'Node-IPTV-App/1.0'}});
+    const response=await fetch(url,{headers:{'User-Agent':'Node-IPTV-App/1.0'}});
     if(!response.ok)throw new Error(`HTTP ${response.status}`);
-
-    const data=await response.text();
-
-    await fs.writeFile(LOCAL_M3U_FILE,data);
-
+    const data=await response.json();
+    await fs.mkdir(CACHE_ROOT,{recursive:true});
+    await fs.writeFile(cacheFile,JSON.stringify(data));
     return data;
   }catch(_){
     try{
-      return await fs.readFile(LOCAL_M3U_FILE,'utf8');
+      return JSON.parse(await fs.readFile(path.join(DATA_ROOT,filename),'utf8'));
     }catch(_){
-      return '';
+      return [];
     }
   }
-}
-
-function parseM3u(m3uContent){
-  const channels=[];
-  let currentChannel=null;
-
-  for(const rawLine of String(m3uContent||'').split(/\r?\n/)){
-    const line=rawLine.trim();
-
-    if(!line)continue;
-
-    if(line.startsWith('#EXTINF:')){
-      const rawName=line.includes(',')?line.slice(line.indexOf(',')+1).trim():'';
-      const qualityInfo=extractQualityFromName(rawName);
-
-      const tvgId=attribute(line,'tvg-id')||'';
-      const tvgCountry=attribute(line,'tvg-country')||'';
-
-      currentChannel={
-        id:tvgId||attribute(line,'tvg-name')||'',
-        name:qualityInfo.name,
-        logo:attribute(line,'tvg-logo')||'',
-        categories:normalizeCategories(attribute(line,'group-title')),
-        country:extractCountryFromTvgId(tvgId,tvgCountry),
-        stream_url:'',
-        stream_urls:[],
-        qualityBadge:qualityInfo.qualityBadge
-      };
-      continue;
-    }
-
-    if(line.startsWith('#EXTGRP:')){
-      if(currentChannel){
-        currentChannel.categories=
-          normalizeCategories(
-            line.slice('#EXTGRP:'.length).trim()
-          );
-      }
-      continue;
-    }
-
-    if(line.startsWith('#'))continue;
-
-    if(currentChannel){
-      currentChannel.stream_url=line;
-      currentChannel.stream_urls=[line];
-      channels.push(currentChannel);
-      currentChannel=null;
-    }
-  }
-
-  return channels.filter(item=>item.name&&item.stream_url);
-}
-
-function extractQualityFromName(name){
-  const normalizedName=String(name||'').trim();
-  const match=normalizedName.match(/\s*\((\d{3,4}p)\)\s*$/i);
-
-  if(!match){
-    return{
-      name:normalizedName,
-      qualityBadge:''
-    };
-  }
-
-  const quality=match[1].toLowerCase();
-
-  const qualityBadge=(
-    quality==='1080p'
-      ?'FHD'
-      :quality==='720p'
-        ?'HD'
-        :quality==='576p'||quality==='480p'
-          ?'SD'
-          :quality.toUpperCase()
-  );
-
-  return{
-    name:normalizedName.replace(new RegExp(`\\s*\\((\\d{3,4}p)\\)\\s*$`, 'i'),'').trim(),
-    qualityBadge
-  };
-}
-
-function normalizeCategories(value){
-  const categories=
-    String(value||'')
-      .split(';')
-      .map(item=>item.trim())
-      .filter(Boolean);
-
-  return categories.length?categories:['Undefined'];
-}
-
-function extractCountryFromTvgId(value,fallbackValue=''){
-  const explicitCountry=String(fallbackValue||'').trim();
-
-  if(explicitCountry){
-    return explicitCountry.toUpperCase();
-  }
-
-  const tvgId=String(value||'').trim();
-  const match=tvgId.match(/\.([a-z]{2})(?:@|$)/i);
-
-  return match?.[1]?.toUpperCase()||'';
 }
 
 async function readEpg(){
@@ -348,9 +237,6 @@ function renderPage({
 
         const placeholderUrl=createPlaceholderUrl(channel.name);
         const logoUrl=channel.logo||placeholderUrl;
-        const qualityBadge=channel.qualityBadge
-          ?`<div class="channel-quality-badge">${escapeHtml(channel.qualityBadge)}</div>`
-          :'';
 
         const categoriesMarkup=(
           Array.isArray(channel.categories)
@@ -387,8 +273,6 @@ function renderPage({
                 loading="lazy"
                 onerror="this.onerror=null;this.src='${placeholderUrl}'"
               >
-
-              ${qualityBadge}
 
               <div class="channel-play">
                 <span>▶</span>
@@ -510,11 +394,6 @@ function renderPage({
       ?countries[country]||country
       :'All countries';
 
-  const selectedCategoryName=
-    category
-      ?categories[category]||category
-      :'All categories';
-
   const countryPickerOptions=
     Object.entries(countries)
       .map(([code,name])=>
@@ -532,21 +411,6 @@ function renderPage({
             loading="lazy"
           >
           ${escapeHtml(name)}
-        </button>
-        `
-      )
-      .join('');
-
-  const categoryPickerOptions=
-    Object.entries(categories)
-      .map(([id,name])=>
-        `
-        <button
-          type="button"
-          class="country-option"
-          data-category="${escapeHtml(id,true)}"
-        >
-          ${categoryIcon(name)} ${escapeHtml(name)}
         </button>
         `
       )
@@ -586,7 +450,7 @@ ${styles()}
 
   <header class="top-header">
 
-    <div class="brand-area flex-grow-1">
+    <div class="brand-area">
 
       <div class="brand-logo">
         <img src="gtv-logo.svg" alt="GTV">
@@ -604,19 +468,6 @@ ${styles()}
     <div class="channel-count">
       <strong>${total.toLocaleString()}</strong>
       <span>Live Channels</span>
-    </div>
-
-    <div class="header-actions">
-      <a
-        href="https://github.com/babai93/giptv"
-        class="header-action"
-        title="GitHub"
-        aria-label="GitHub"
-        target="_blank"
-        rel="noreferrer"
-      >
-        <img src="https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/github.svg" alt="GitHub" width="20" height="20">
-      </a>
     </div>
 
   </header>
@@ -703,50 +554,31 @@ ${styles()}
       </div>
 
 
-      <div class="category-picker">
+      <select
+        name="category"
+        class="filter-control category-select"
+      >
 
-        <input
-          type="hidden"
-          name="category"
-          value="${escapeHtml(category,true)}"
-        >
+        <option value="">
+          📺 All categories
+        </option>
 
-        <button
-          type="button"
-          id="category-picker-toggle"
-          class="filter-control"
-        >
+        ${
+          Object.entries(categories)
+            .map(([id,name])=>
+              `
+              <option
+                value="${escapeHtml(id,true)}"
+                ${category===id?'selected':''}
+              >
+                ${categoryIcon(name)}
+                ${escapeHtml(name)}
+              </option>
+              `
+            ).join('')
+        }
 
-          <span>
-            ${category
-              ?`${categoryIcon(categories[category]||category)} ${escapeHtml(categories[category]||category)}`
-              :'📺 All categories'
-            }
-          </span>
-
-          <span>🔻</span>
-
-        </button>
-
-        <div
-          id="category-picker-menu"
-          class="country-picker-menu"
-          hidden
-        >
-
-          <button
-            type="button"
-            class="country-option"
-            data-category=""
-          >
-            📺 All categories
-          </button>
-
-          ${categoryPickerOptions}
-
-        </div>
-
-      </div>
+      </select>
 
       <button
         class="search-button"
@@ -767,17 +599,7 @@ ${styles()}
                 form.elements.search.value='';
                 form.elements.country.value='';
                 form.elements.category.value='';
-                const countryToggle=form.querySelector('#country-picker-toggle span');
-                const categoryToggle=form.querySelector('#category-picker-toggle span');
-
-                if(countryToggle)
-                  countryToggle.innerHTML='🌎 All countries';
-
-                if(categoryToggle)
-                  categoryToggle.innerHTML='📺 All categories';
-
-                form.elements.country.value='';
-                form.elements.category.value='';
+                form.querySelector('#country-picker-toggle span').textContent='All countries';
               "
             >
               Clear
@@ -1025,38 +847,6 @@ body{
   padding:8px 4px 24px;
 }
 
-.header-actions{
-  display:flex;
-  align-items:center;
-  gap:10px;
-}
-
-.header-action{
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  min-width:42px;
-  height:38px;
-  padding:0 12px;
-  border:1px solid var(--border);
-  border-radius:12px;
-  background:rgba(255,255,255,.03);
-  color:var(--text);
-  text-decoration:none;
-  font-weight:600;
-  transition:transform .2s ease, border-color .2s ease, background .2s ease;
-}
-
-.header-action img {
-  filter: brightness(0) invert(1); /* makes it white */
-}
-
-.header-action:hover{
-  transform:translateY(-1px);
-  border-color:rgba(255,255,255,.18);
-  background:rgba(255,255,255,.06);
-}
-
 .brand-area{
   display:flex;
   align-items:center;
@@ -1210,10 +1000,14 @@ button.filter-control{
   margin-right:5px;
 }
 
-.category-picker{
-  position:relative;
+.category-select{
   flex:1 1 180px;
-  min-width:0;
+  appearance:auto;
+}
+
+.category-select option{
+  color:#fff;
+  background:#161b23;
 }
 
 .search-button{
@@ -1397,6 +1191,7 @@ button.filter-control{
   }
 }
 
+
 #now-playing-program{
   min-height:18px;
   color:#b9c1cb!important;
@@ -1540,23 +1335,6 @@ button.filter-control{
   height:100%;
   object-fit:contain;
   transition:transform .25s ease;
-}
-
-.channel-quality-badge{
-  position:absolute;
-  top:8px;
-  right:8px;
-  z-index:2;
-  padding:2px 7px;
-  border-radius:8px;
-  background:rgb(92 0 4);
-  color:#fff;
-  font-size:.62rem;
-  font-weight:800;
-  letter-spacing:.04em;
-  text-transform:uppercase;
-  box-shadow:0 6px 14px rgba(0,0,0,.28);
-  pointer-events:none;
 }
 
 .channel-card:hover .channel-logo{
@@ -1748,7 +1526,7 @@ button.filter-control{
 
   .search-box,
   .country-picker,
-  .category-picker,
+  .category-select,
   .search-button,
   .clear-button{
     flex:1 1 100%;
@@ -1979,84 +1757,6 @@ if(countryPicker&&countryMenu){
         !countryMenu.contains(event.target)
       ){
         countryMenu.hidden=true;
-      }
-
-    }
-  );
-
-}
-
-
-/* CATEGORY PICKER */
-
-const categoryPicker=
-  document.getElementById(
-    'category-picker-toggle'
-  );
-
-const categoryMenu=
-  document.getElementById(
-    'category-picker-menu'
-  );
-
-
-if(categoryPicker&&categoryMenu){
-
-  categoryPicker.addEventListener(
-    'click',
-    ()=>{
-      categoryMenu.hidden=
-        !categoryMenu.hidden;
-    }
-  );
-
-
-  categoryMenu.addEventListener(
-    'click',
-    event=>{
-
-      const option=
-        event.target.closest(
-          '.country-option'
-        );
-
-      if(!option)return;
-
-      const categoryId=
-        option.dataset.category||'';
-
-      const form=
-        categoryPicker.closest('form');
-
-      const hidden=
-        form.querySelector(
-          '[name="category"]'
-        );
-
-      hidden.value=categoryId;
-
-      categoryPicker
-        .querySelector('span')
-        .innerHTML=
-          categoryId
-            ?option.innerHTML
-            :'📺 All categories';
-
-      categoryMenu.hidden=true;
-
-    }
-  );
-
-
-  document.addEventListener(
-    'click',
-    event=>{
-
-      if(
-        !categoryPicker.contains(event.target)&&
-        !categoryMenu.contains(event.target)
-      ){
-        categoryMenu.hidden=true;
       }
 
     }
@@ -2428,84 +2128,182 @@ module.exports=async function handler(req,res){
 
 
   const[
-    m3uContent,
+    channels,
+    streams,
+    logos,
+    countryData,
+    categoryData,
     epg
   ]=await Promise.all([
-    readM3u(),
+
+    readJson(
+      `${API_ROOT}/channels.json`,
+      'channels.json'
+    ),
+
+    readJson(
+      `${API_ROOT}/streams.json`,
+      'streams.json'
+    ),
+
+    readJson(
+      `${API_ROOT}/logos.json`,
+      'logos.json'
+    ),
+
+    readJson(
+      `${API_ROOT}/countries.json`,
+      'countries.json'
+    ),
+
+    readJson(
+      `${API_ROOT}/categories.json`,
+      'categories.json'
+    ),
+
     readEpg()
+
   ]);
 
 
-  const m3uChannels=
-    parseM3u(m3uContent);
-
-
-  const countryDisplayNames=
-    new Intl.DisplayNames(
-      ['en'],
-      {type:'region'}
-    );
-
   const countryNames=
     Object.fromEntries(
-      [
-        ...new Set(
-          m3uChannels
-            .map(item=>item.country)
-            .filter(Boolean)
+      countryData
+        .filter(
+          item=>item.code&&item.name
         )
-      ]
-      .sort()
-      .map(code=>[
-        code,
-        countryDisplayNames.of(code)||code
-      ])
+        .map(
+          item=>[
+            item.code.toUpperCase(),
+            item.name
+          ]
+        )
+    );
+
+
+  const categoryNames=
+    Object.fromEntries(
+      categoryData
+        .filter(
+          item=>item.id&&item.name
+        )
+        .map(
+          item=>[
+            item.id,
+            item.name
+          ]
+        )
+    );
+
+
+  const streamMap=
+    streams
+      .filter(
+        item=>item.channel&&item.url
+      )
+      .reduce(
+        (map,item)=>{
+
+          if(!map[item.channel])
+            map[item.channel]=[];
+
+          map[item.channel].push(
+            item.url
+          );
+
+          return map;
+
+        },
+        {}
+      );
+
+
+  const logoMap={};
+
+
+  logos
+    .filter(
+      item=>item.channel&&item.url
+    )
+    .forEach(
+      item=>{
+
+        if(
+          !logoMap[item.channel]||
+          item.in_use
+        ){
+          logoMap[item.channel]=
+            item.url;
+        }
+
+      }
     );
 
 
   let playable=
-    m3uChannels
+    channels
       .filter(
         item=>
           item.id&&
-          item.stream_url
+          streamMap[item.id]
       )
-      .map(item=>({
+      .map(item=>{
 
-        ...item,
+        const streamUrls=
+          streamMap[item.id];
 
-        stream_urls:
-          item.stream_urls||[
-            item.stream_url
-          ],
+        const preferredUrl=
+          [...streamUrls]
+            .sort(
+              (firstUrl,secondUrl)=>{
 
-        stream_url:
-          item.stream_url,
+                const firstPreferred=
+                  firstUrl.includes(
+                    'streams.tangotv.in'
+                  )?0:1;
 
-        logo:
-          item.logo||'',
+                const secondPreferred=
+                  secondUrl.includes(
+                    'streams.tangotv.in'
+                  )?0:1;
 
-        country:
-          item.country||'IN',
+                return(
+                  firstPreferred-
+                  secondPreferred
+                );
 
-        categories:
-          Array.isArray(item.categories)
-            ?item.categories
-            :normalizeCategories(item.categories),
+              }
+            )[0];
 
-        program_name:
-          epg.programs[item.id]||
-          epg.byName[
-            (item.name||'')
-              .toLowerCase()
-              .replace(
-                /[^a-z0-9]/g,
-                ''
-              )
-          ]||
-          ''
 
-      }));
+        return{
+
+          ...item,
+
+          stream_urls:
+            streamUrls,
+
+          stream_url:
+            preferredUrl,
+
+          logo:
+            logoMap[item.id],
+
+          program_name:
+            epg.programs[item.id]||
+            epg.byName[
+              (item.name||'')
+                .toLowerCase()
+                .replace(
+                  /[^a-z0-9]/g,
+                  ''
+                )
+            ]||
+            ''
+
+        };
+
+      });
 
 
   const allCountries=
@@ -2556,7 +2354,7 @@ module.exports=async function handler(req,res){
       .map(
         id=>[
           id,
-          id
+          categoryNames[id]||id
         ]
       )
 
