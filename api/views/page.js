@@ -199,7 +199,7 @@ function renderPage({
   const cards = buildCards({ channels: pageChannels, categories, countryNames });
   const pageLinks = buildPageLinks({ totalPages, page, search, country, category });
 
-  const selectedCountryName = country ? countries[country] || country : 'All countries';
+  const selectedCountryName = country ? countries[country] || country : '🌎 All countries';
   const selectedCategoryName = category ? categories[category] || category : 'All categories';
 
   const countryPickerOptions = Object.entries(countries)
