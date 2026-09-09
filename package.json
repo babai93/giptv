@@ -9,5 +9,8 @@
   "scripts": {
     "dev": "node --watch local-server.js",
     "check": "node --check api/index.js"
+  },
+  "dependencies": {
+    "sharp": "^0.35.4"
   }
 }
