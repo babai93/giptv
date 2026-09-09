@@ -1,16 +1,16 @@
 const sharp = require('sharp');
 
-const LOGO_DARK_CUTOFF = 50;
+const LOGO_BLACK_CUTOFF = 50;
 const logoCache = new Map();
 
-async function getDarkPercentage(buffer) {
+async function getBlackPercentage(buffer) {
   const { data, info } = await sharp(buffer)
     .png()
     .raw()
     .toBuffer({ resolveWithObject: true });
 
   let nonTransparentPixels = 0;
-  let darkPixels = 0;
+  let blackPixels = 0;
 
   for (let index = 0; index < data.length; index += info.channels) {
     const alpha = info.channels === 4 ? data[index + 3] : 255;
@@ -25,16 +25,17 @@ async function getDarkPercentage(buffer) {
     const green = data[index + 1];
     const blue = data[index + 2];
     const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+    const colorRange = Math.max(red, green, blue) - Math.min(red, green, blue);
 
-    if (luminance < 50) {
-      darkPixels += 1;
+    if (luminance < 50 && colorRange < 35) {
+      blackPixels += 1;
     }
   }
 
   return {
     totalPixels: nonTransparentPixels,
-    darkPixels,
-    darkPercentage: nonTransparentPixels ? ((darkPixels / nonTransparentPixels) * 100).toFixed(2) : '0.00'
+    blackPixels,
+    blackPercentage: nonTransparentPixels ? ((blackPixels / nonTransparentPixels) * 100).toFixed(2) : '0.00'
   };
 }
 
@@ -64,10 +65,17 @@ async function processLogo(url) {
   let processedBuffer;
 
   try {
-    processedBuffer = await sharp(inputBuffer)
-      .negate({ alpha: false })
-      .png()
-      .toBuffer();
+    const { blackPercentage } = await getBlackPercentage(inputBuffer);
+    const shouldInvert = Number.parseFloat(blackPercentage) > LOGO_BLACK_CUTOFF;
+
+    processedBuffer = shouldInvert
+      ? await sharp(inputBuffer)
+          .negate({ alpha: false })
+          .png()
+          .toBuffer()
+      : await sharp(inputBuffer)
+          .png()
+          .toBuffer();
   } catch (_error) {
     processedBuffer = await sharp(inputBuffer)
       .png()
