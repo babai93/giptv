@@ -1188,7 +1188,13 @@ body{
   width:30px;
   height:30px;
   margin-right:5px;
-  filter: brightness(0) invert(1); /* makes it white */
+  vertical-align:middle;
+
+  /* #b9c1cb */
+  filter: brightness(0) saturate(100%)
+          invert(78%) sepia(8%)
+          saturate(390%) hue-rotate(175deg)
+          brightness(88%) contrast(87%) !important;
 }
 
 .header-action:hover{
@@ -1976,7 +1982,7 @@ function updateProgram(name){
     .replace(/'/g,'&#039;');
 
   programEl.innerHTML = safeName
-    ? '<img src="https://www.svgrepo.com/show/315253/video.svg" alt="Now Playing"> ' + safeName
+    ? '<img src="/video.svg" alt="Now Playing"> ' + safeName
     : '';
 }
 
@@ -2610,6 +2616,38 @@ module.exports=async function handler(req,res){
     }
 
   }
+
+  if(requestUrl.pathname==='/video.svg'){
+
+  try{
+
+    const videoIcon=await fs.readFile(
+      path.join(DATA_ROOT,'video.svg')
+    );
+
+    res.setHeader(
+      'Content-Type',
+      'image/svg+xml; charset=utf-8'
+    );
+
+    res.setHeader(
+      'Cache-Control',
+      'public, max-age=86400'
+    );
+
+    return res
+      .status(200)
+      .send(videoIcon);
+
+  }catch(_){
+
+    return res
+      .status(404)
+      .send('Video icon not found');
+
+  }
+
+}
 
 
   const params=
