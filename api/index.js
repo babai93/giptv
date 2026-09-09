@@ -5,6 +5,7 @@ const zlib=require('zlib');
 const DATA_ROOT=path.join(__dirname,'..');
 const CACHE_ROOT='/tmp/giptv-cache';
 const M3U_URL='https://iptv-org.github.io/iptv/index.m3u';
+const STREAMS_URL='https://iptv-org.github.io/api/streams.json';
 const LOCAL_M3U_FILE=path.join(DATA_ROOT,'index_file.m3u');
 const M3U_REFRESH_MS=6*60*60*1000;
 
@@ -34,6 +35,98 @@ async function readM3u(){
       return '';
     }
   }
+}
+
+async function readStreamsJson(){
+  const cacheFile=path.join(CACHE_ROOT,'streams.json');
+
+  try{
+    const cached=await fs.readFile(cacheFile,'utf8');
+    const stat=await fs.stat(cacheFile);
+
+    if(Date.now()-stat.mtimeMs<M3U_REFRESH_MS){
+      const parsed=JSON.parse(cached);
+      return Array.isArray(parsed)?parsed:[];
+    }
+  }catch(_){ }
+
+  try{
+    const response=await fetch(STREAMS_URL,{headers:{'User-Agent':'Node-IPTV-App/1.0'}});
+    if(!response.ok)throw new Error(`HTTP ${response.status}`);
+
+    const data=await response.text();
+    const parsed=JSON.parse(data);
+
+    await fs.mkdir(CACHE_ROOT,{recursive:true});
+    await fs.writeFile(cacheFile,data);
+
+    return Array.isArray(parsed)?parsed:[];
+  }catch(_){
+    try{
+      const cached=await fs.readFile(cacheFile,'utf8');
+      const parsed=JSON.parse(cached);
+      return Array.isArray(parsed)?parsed:[];
+    }catch(_){
+      return [];
+    }
+  }
+}
+
+function buildStreamUrlMap(streams){
+  const map=new Map();
+
+  for(const stream of Array.isArray(streams)?streams:[]){
+    const channel=String(stream?.channel||'').trim();
+    const url=String(stream?.url||'').trim();
+
+    if(!channel||!url)continue;
+
+    const keys=[
+      channel,
+      channel.toLowerCase(),
+      channel.replace(/@sd$/i,''),
+      channel.replace(/@sd$/i,'').toLowerCase()
+    ];
+
+    for(const key of [...new Set(keys)]){
+      const existing=map.get(key)||[];
+
+      if(!existing.includes(url)){
+        existing.push(url);
+      }
+
+      map.set(key,existing);
+    }
+  }
+
+  return map;
+}
+
+function resolveStreamUrls(channelId,streamUrl,streamUrlMap){
+  const candidates=[
+    String(channelId||'').trim(),
+    String(channelId||'').trim().toLowerCase(),
+    String(channelId||'').trim().replace(/@sd$/i,''),
+    String(channelId||'').trim().replace(/@sd$/i,'').toLowerCase()
+  ];
+
+  const urls=[];
+
+  for(const candidate of [...new Set(candidates)]){
+    if(!candidate)continue;
+
+    const fallbackList=streamUrlMap.get(candidate)||[];
+
+    for(const fallbackUrl of fallbackList){
+      if(fallbackUrl && !urls.includes(fallbackUrl)){
+        urls.push(fallbackUrl);
+      }
+    }
+  }
+
+  if(urls.length) return urls;
+
+  return streamUrl?[streamUrl]:[];
 }
 
 function splitExtinfLabel(line){
@@ -407,7 +500,10 @@ function renderPage({
                 channel.stream_url,
                 channel.name,
                 channel.id,
-                channel.program_name||''
+                channel.program_name||'',
+                channel.stream_urls&&channel.stream_urls.length
+                  ?channel.stream_urls
+                  :[channel.stream_url]
               ]),
               true
             )})'
@@ -1085,6 +1181,13 @@ body{
 }
 
 .header-action img {
+  filter: brightness(0) invert(1); /* makes it white */
+}
+
+#now-playing-program img{
+  width:30px;
+  height:30px;
+  margin-right:5px;
   filter: brightness(0) invert(1); /* makes it white */
 }
 
@@ -1865,15 +1968,26 @@ let pendingStream;
 
 
 function updateProgram(name){
-  programEl.textContent=
-    name?'Now playing: '+name:'';
+  const safeName = String(name || '')
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#039;');
+
+  programEl.innerHTML = safeName
+    ? '<img src="https://www.svgrepo.com/show/315253/video.svg" alt="Now Playing"> ' + safeName
+    : '';
 }
 
 
-async function loadStream(url){
+async function loadStream(url,streamCandidates=[]){
 
   if(!shakaPlayer){
-    pendingStream={url};
+    pendingStream={
+      url,
+      streamCandidates
+    };
     return;
   }
 
@@ -1891,6 +2005,23 @@ async function loadStream(url){
   }catch(error){
 
     console.error(error);
+
+    const candidates=
+      Array.isArray(streamCandidates)&&streamCandidates.length
+        ?streamCandidates
+        :[url];
+
+    const currentIndex=
+      candidates.indexOf(url);
+
+    if(currentIndex>=0&&currentIndex<candidates.length-1){
+      statusEl.textContent='Trying alternate stream...';
+      statusEl.className='text-warning';
+      return loadStream(
+        candidates[currentIndex+1],
+        candidates
+      );
+    }
 
     statusEl.textContent='Stream unavailable';
     statusEl.className='text-danger';
@@ -1931,7 +2062,10 @@ async function init(){
 
     pendingStream=null;
 
-    loadStream(stream.url);
+    loadStream(
+      stream.url,
+      stream.streamCandidates||[stream.url]
+    );
 
   }
 
@@ -2293,6 +2427,7 @@ function playStream(
   name,
   id,
   program,
+  streamUrls=[],
   scroll=true
 ){
 
@@ -2300,6 +2435,11 @@ function playStream(
     String(name||'')
       .replace(/\s*\((\d{3,4}[pi])\)(?:\s*\[[^\]]+\])*\s*$/i, '')
       .trim();
+
+  const candidates=
+    Array.isArray(streamUrls)&&streamUrls.length
+      ?streamUrls
+      :[url].filter(Boolean);
 
   titleEl.textContent=cleanedName;
   titleEl.title=cleanedName;
@@ -2315,10 +2455,11 @@ function playStream(
   sessionStorage.setItem(
     'iptv-current-stream',
     JSON.stringify({
-      url,
+      url:candidates[0]||url,
       name:cleanedName,
       id,
-      program
+      program,
+      streamUrls:candidates
     })
   );
 
@@ -2331,7 +2472,10 @@ function playStream(
 
   }
 
-  loadStream(url);
+  loadStream(
+    candidates[0]||url,
+    candidates
+  );
 
 }
 
@@ -2402,6 +2546,7 @@ if(saved){
         stream.name,
         stream.id,
         stream.program||'',
+        stream.streamUrls||[stream.url],
         false
       );
 
@@ -2473,15 +2618,20 @@ module.exports=async function handler(req,res){
 
   const[
     m3uContent,
+    streamsJson,
     epg
   ]=await Promise.all([
     readM3u(),
+    readStreamsJson(),
     readEpg()
   ]);
 
 
   const m3uChannels=
     parseM3u(m3uContent);
+
+  const streamUrlMap=
+    buildStreamUrlMap(streamsJson);
 
 
   const countryDisplayNames=
@@ -2514,42 +2664,46 @@ module.exports=async function handler(req,res){
           item.id&&
           item.stream_url
       )
-      .map(item=>({
+      .map(item=>{
 
-        ...item,
+        const streamUrls=
+          resolveStreamUrls(
+            item.id,
+            item.stream_url,
+            streamUrlMap
+          );
 
-        stream_urls:
-          item.stream_urls||[
-            item.stream_url
-          ],
-
-        stream_url:
-          item.stream_url,
-
-        logo:
-          item.logo||'',
-
-        country:
-          item.country||'IN',
-
-        categories:
-          Array.isArray(item.categories)
-            ?item.categories
-            :normalizeCategories(item.categories),
-
-        program_name:
-          epg.programs[item.id]||
-          epg.byName[
-            (item.name||'')
-              .toLowerCase()
-              .replace(
-                /[^a-z0-9]/g,
-                ''
-              )
-          ]||
-          ''
-
-      }));
+        return {
+          ...item,
+          stream_urls:
+            streamUrls.length
+              ?streamUrls
+              :item.stream_urls||[
+                item.stream_url
+              ],
+          stream_url:
+            streamUrls[0]||item.stream_url,
+          logo:
+            item.logo||'',
+          country:
+            item.country||'IN',
+          categories:
+            Array.isArray(item.categories)
+              ?item.categories
+              :normalizeCategories(item.categories),
+          program_name:
+            epg.programs[item.id]||
+            epg.byName[
+              (item.name||'')
+                .toLowerCase()
+                .replace(
+                  /[^a-z0-9]/g,
+                  ''
+                )
+            ]||
+            ''
+        };
+      });
 
 
   const allCountries=
