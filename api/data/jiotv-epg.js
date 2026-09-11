@@ -257,6 +257,23 @@ async function fetchJioSchedules(channelId) {
 const JIOTV_CHANNEL_LIST_TTL_MS = 6 * 60 * 60 * 1000;
 let channelIndexMemory = null;
 
+// Bundled snapshot of the Jio channel list, so name-to-id resolution still
+// works when the live channel-list API is unreachable (network issues,
+// regional restrictions) or too slow on a cold start.
+let bundledChannelIndex = null;
+
+function getBundledChannelIndex() {
+  if (!bundledChannelIndex) {
+    try {
+      bundledChannelIndex = require('./jiotv-channels.json');
+    } catch (_error) {
+      bundledChannelIndex = {};
+    }
+  }
+
+  return bundledChannelIndex;
+}
+
 async function getJioChannelIndex() {
   if (channelIndexMemory && Date.now() - channelIndexMemory.time < JIOTV_CHANNEL_LIST_TTL_MS) {
     return channelIndexMemory.index;
@@ -291,13 +308,38 @@ async function getJioChannelIndex() {
     channelIndexMemory = { index, time: Date.now() };
     return index;
   } catch (_error) {
-    return channelIndexMemory ? channelIndexMemory.index : {};
+    // Live list unavailable: reuse any previously cached copy, else the
+    // bundled snapshot, so schedule fetches can still resolve channel ids.
+    try {
+      const cached = await readCache(cacheFile);
+
+      if (cached) {
+        const index = JSON.parse(cached);
+        channelIndexMemory = { index, time: Date.now() };
+        return index;
+      }
+    } catch (_fallbackError) {
+      // Ignore and use the bundled snapshot
+    }
+
+    return getBundledChannelIndex();
   }
 }
 
 async function fetchJioSchedulesByName(name, fallbackId) {
   const index = await getJioChannelIndex();
-  const resolvedId = index[normalizeChannelName(name)] || String(fallbackId || '');
+  const rawName = String(name || '');
+
+  const candidates = [normalizeChannelName(rawName)];
+
+  // iptv-org sometimes appends tokens (e.g. "9XM TV") that Jio's listing omits.
+  // Drop a trailing standalone token and re-normalize as a fallback.
+  const stripped = rawName.trim().replace(/\s+(tv|hd|sd|uhd|4k|fta|plus|one|two|three)\s*$/i, '');
+  if (stripped && stripped !== rawName.trim()) {
+    candidates.push(normalizeChannelName(stripped));
+  }
+
+  const resolvedId = candidates.map((key) => index[key]).find(Boolean) || String(fallbackId || '');
 
   if (!resolvedId) {
     return [];
