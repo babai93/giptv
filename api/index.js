@@ -3,7 +3,7 @@ const path = require('path');
 
 const { DATA_ROOT, CHANNELS_PER_PAGE } = require('./config');
 const { readM3u, readStreamsJson, parseM3u, buildStreamUrlMap, resolveStreamUrls } = require('./data/api');
-const { readEpg } = require('./data/epg');
+const { readEpg, resolveEpgProgram } = require('./data/epg');
 const { processLogo } = require('./utils/logo');
 const { renderPage } = require('./views/page');
 
@@ -29,6 +29,10 @@ module.exports = async function handler(req, res) {
 
   if (requestUrl.pathname === '/video.svg') {
     return serveStaticAsset(requestUrl, res, 'video.svg');
+  }
+
+  if (requestUrl.pathname === '/jio-logo.svg') {
+    return serveStaticAsset(requestUrl, res, 'jio-logo.svg');
   }
 
   if (requestUrl.pathname === '/logo') {
@@ -73,6 +77,7 @@ module.exports = async function handler(req, res) {
     .filter((item) => item.id && item.stream_url)
     .map((item) => {
       const streamUrls = resolveStreamUrls(item.id, item.stream_url, streamUrlMap);
+      const { program, source } = resolveEpgProgram(epg, item);
 
       return {
         ...item,
@@ -81,10 +86,8 @@ module.exports = async function handler(req, res) {
         logo: item.logo || '',
         country: item.country || 'IN',
         categories: Array.isArray(item.categories) ? item.categories : [item.categories || 'Undefined'],
-        program_name:
-          epg.programs[item.id] ||
-          epg.byName[(item.name || '').toLowerCase().replace(/[^a-z0-9]/g, '')] ||
-          ''
+        program_name: program,
+        program_source: source
       };
     });
 

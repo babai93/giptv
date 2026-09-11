@@ -10,17 +10,32 @@ const programEl = document.getElementById('now-playing-program');
 let shakaPlayer;
 let pendingStream;
 
-function updateProgram(name) {
-  const safeName = String(name || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+function escapeHtmlText(value) {
+  const amp = String.fromCharCode(38);
 
-  programEl.innerHTML = safeName
-    ? '<img src="/video.svg" alt="Now Playing"> ' + safeName
+  return String(value || '')
+    .replace(/&/g, amp + 'amp;')
+    .replace(/</g, amp + 'lt;')
+    .replace(/>/g, amp + 'gt;')
+    .replace(/"/g, amp + 'quot;')
+    .replace(/'/g, amp + '#039;');
+}
+
+function updateProgram(name, isJioSource) {
+  const safeName = escapeHtmlText(name);
+
+  if (!safeName) {
+    programEl.innerHTML = '';
+    return;
+  }
+
+  const videoIcon =
+    '<img src="/video.svg" alt="Now Playing" width="25" height="25"> ';
+  const jioBadge = isJioSource
+    ? ' <img src="/jio-logo.svg" alt="JioTV EPG" width="14" height="14" class="jio-epg-badge">'
     : '';
+
+  programEl.innerHTML = videoIcon + safeName + jioBadge;
 }
 
 async function loadStream(url, streamCandidates = []) {
@@ -244,7 +259,7 @@ document.addEventListener('click', (event) => {
   loadPage(link.href);
 });
 
-function playStream(url, name, id, program, streamUrls = [], scroll = true) {
+function playStream(url, name, id, program, streamUrls = [], isJioSource = false, scroll = true) {
   const cleanedName = String(name || '')
     .replace(/\s*\((\d{3,4}[pi])\)(?:\s*\[[^\]]+\])*\s*$/i, '')
     .trim();
@@ -259,14 +274,15 @@ function playStream(url, name, id, program, streamUrls = [], scroll = true) {
   statusEl.textContent = 'Connecting...';
   statusEl.className = 'text-info';
 
-  updateProgram(program);
+  updateProgram(program, isJioSource);
 
   sessionStorage.setItem('iptv-current-stream', JSON.stringify({
     url: candidates[0] || url,
     name: cleanedName,
     id,
     program,
-    streamUrls: candidates
+    streamUrls: candidates,
+    isJioSource
   }));
 
   if (scroll) {
@@ -306,6 +322,7 @@ if (saved) {
         stream.id,
         stream.program || '',
         stream.streamUrls || [stream.url],
+        stream.isJioSource || false,
         false
       );
     }

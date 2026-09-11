@@ -1,2 +1,4 @@
 .vercel
 .env*
+.cache/
+test-output.txt

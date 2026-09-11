@@ -5,10 +5,84 @@ const zlib = require('zlib');
 const { CACHE_ROOT, EPG_URL, EPG_LOCAL_FILE, M3U_REFRESH_MS } = require('../config');
 const { readCache, writeCache, isCacheValid } = require('../utils/cache');
 const { attribute, epgDate, textContent } = require('../utils/helpers');
+const { readJiotvEpg } = require('./jiotv-epg');
 
 let parsedEpgCache = null;
 let parsedEpgCacheTime = 0;
 const PARSED_EPG_TTL_MS = 5 * 60 * 1000;
+
+function mergeEpgData(baseEpg, jiotvEpg) {
+  const programs = {
+    ...baseEpg.programs,
+    ...jiotvEpg.programs
+  };
+  const byName = {
+    ...baseEpg.byName,
+    ...jiotvEpg.byName
+  };
+  const sources = {};
+
+  for (const key of Object.keys(programs)) {
+    sources[key] = key in jiotvEpg.programs ? 'jio' : 'xml';
+  }
+
+  const byNameSources = {};
+
+  for (const key of Object.keys(byName)) {
+    byNameSources[key] = key in jiotvEpg.byName ? 'jio' : 'xml';
+  }
+
+  return { programs, byName, sources, byNameSources };
+}
+
+// Resolves the program for a channel with JioTV EPG as the primary
+// source for Indian channels and XML EPG for the rest.
+function resolveEpgProgram(epg, item) {
+  const channelId = String(item?.id || '');
+  const nameKey = String(item?.name || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+  const isIndianChannel = String(item?.country || '').toUpperCase() === 'IN';
+
+  const idPrograms = epg?.programs || {};
+  const namePrograms = epg?.byName || {};
+  const idSources = epg?.sources || {};
+  const nameSources = epg?.byNameSources || {};
+
+  if (isIndianChannel) {
+    const nameMatch = namePrograms[nameKey] || '';
+
+    if (nameMatch) {
+      return {
+        program: nameMatch,
+        source: nameSources[nameKey] || 'jio'
+      };
+    }
+
+    const idMatch = idPrograms[channelId] || '';
+
+    return {
+      program: idMatch,
+      source: idMatch ? idSources[channelId] || '' : ''
+    };
+  }
+
+  const idMatch = idPrograms[channelId] || '';
+
+  if (idMatch) {
+    return {
+      program: idMatch,
+      source: idSources[channelId] || ''
+    };
+  }
+
+  const nameMatch = namePrograms[nameKey] || '';
+
+  return {
+    program: nameMatch,
+    source: nameMatch ? nameSources[nameKey] || '' : ''
+  };
+}
 
 async function readEpg() {
   const cacheFile = path.join(CACHE_ROOT, 'epg.xml');
@@ -17,44 +91,46 @@ async function readEpg() {
     return parsedEpgCache;
   }
 
+  let baseEpg = { programs: {}, byName: {}, sources: {}, byNameSources: {} };
+
   try {
     const cachedXml = await readCache(cacheFile);
     const isFresh = cachedXml ? await isCacheValid(cacheFile, M3U_REFRESH_MS) : false;
 
     if (cachedXml && isFresh) {
-      const parsed = parseEpgXml(cachedXml);
-      parsedEpgCache = parsed;
-      parsedEpgCacheTime = Date.now();
-      return parsed;
+      baseEpg = parseEpgXml(cachedXml);
     }
   } catch (_error) {
     // retry below using network/local fallback
   }
 
-  try {
-    const response = await fetch(EPG_URL, { headers: { 'User-Agent': 'Node-IPTV-App/1.0' } });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const xmlText = zlib.gunzipSync(Buffer.from(await response.arrayBuffer())).toString('utf8');
-    await writeCache(cacheFile, xmlText);
-
-    const parsed = parseEpgXml(xmlText);
-    parsedEpgCache = parsed;
-    parsedEpgCacheTime = Date.now();
-    return parsed;
-  } catch (_error) {
+  if (!baseEpg.programs || Object.keys(baseEpg.programs).length === 0) {
     try {
-      const localXml = await fs.readFile(EPG_LOCAL_FILE, 'utf8');
-      const parsed = parseEpgXml(localXml);
-      parsedEpgCache = parsed;
-      parsedEpgCacheTime = Date.now();
-      return parsed;
-    } catch (_fallbackError) {
-      return { programs: {}, byName: {} };
+      const response = await fetch(EPG_URL, { headers: { 'User-Agent': 'Node-IPTV-App/1.0' } });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const xmlText = zlib.gunzipSync(Buffer.from(await response.arrayBuffer())).toString('utf8');
+      await writeCache(cacheFile, xmlText);
+
+      baseEpg = parseEpgXml(xmlText);
+    } catch (_error) {
+      try {
+        const localXml = await fs.readFile(EPG_LOCAL_FILE, 'utf8');
+        baseEpg = parseEpgXml(localXml);
+      } catch (_fallbackError) {
+        baseEpg = { programs: {}, byName: {}, sources: {}, byNameSources: {} };
+      }
     }
   }
+
+  const jiotvEpg = await readJiotvEpg();
+  const merged = mergeEpgData(baseEpg, jiotvEpg);
+
+  parsedEpgCache = merged;
+  parsedEpgCacheTime = Date.now();
+  return merged;
 }
 
 function parseEpgXml(xml) {
@@ -100,5 +176,6 @@ function parseEpgXml(xml) {
 }
 
 module.exports = {
-  readEpg
+  readEpg,
+  resolveEpgProgram
 };

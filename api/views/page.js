@@ -70,7 +70,8 @@ function buildCards({ channels, categories, countryNames }) {
                 channel.program_name || '',
                 channel.stream_urls && channel.stream_urls.length
                   ? channel.stream_urls
-                  : [channel.stream_url]
+                  : [channel.stream_url],
+                channel.program_source === 'jio'
               ]),
               true
             )})'

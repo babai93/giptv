@@ -128,6 +128,14 @@ body{
           brightness(88%) contrast(87%) !important;
 }
 
+#now-playing-program img.jio-epg-badge{
+  width:14px;
+  height:14px;
+  margin:0 0 0 4px;
+  vertical-align:middle;
+  filter:none !important;
+}
+
 .header-action:hover{
   transform:translateY(-1px);
   border-color:rgba(255,255,255,.18);
