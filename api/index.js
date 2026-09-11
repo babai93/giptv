@@ -3,7 +3,7 @@ const path = require('path');
 
 const { DATA_ROOT, CHANNELS_PER_PAGE } = require('./config');
 const { readM3u, readStreamsJson, parseM3u, buildStreamUrlMap, resolveStreamUrls } = require('./data/api');
-const { readEpg, resolveEpgProgram } = require('./data/epg');
+const { readEpg, resolveEpgProgramLive } = require('./data/epg');
 const { processLogo } = require('./utils/logo');
 const { renderPage } = require('./views/page');
 
@@ -77,7 +77,6 @@ module.exports = async function handler(req, res) {
     .filter((item) => item.id && item.stream_url)
     .map((item) => {
       const streamUrls = resolveStreamUrls(item.id, item.stream_url, streamUrlMap);
-      const { program, source } = resolveEpgProgram(epg, item);
 
       return {
         ...item,
@@ -86,8 +85,8 @@ module.exports = async function handler(req, res) {
         logo: item.logo || '',
         country: item.country || 'IN',
         categories: Array.isArray(item.categories) ? item.categories : [item.categories || 'Undefined'],
-        program_name: program,
-        program_source: source
+        program_name: '',
+        program_source: ''
       };
     });
 
@@ -133,6 +132,19 @@ module.exports = async function handler(req, res) {
 
   const page = Math.max(1, Number.parseInt(params.get('page') || '1', 10) || 1);
   const totalPages = Math.ceil(playable.length / CHANNELS_PER_PAGE);
+
+  // Only the channels actually rendered on this page need a programme, so
+  // resolve EPG for them alone (keeps serverless requests fast).
+  const pageChannels = playable.slice((page - 1) * CHANNELS_PER_PAGE, page * CHANNELS_PER_PAGE);
+
+  await Promise.all(
+    pageChannels.map(async (item) => {
+      const { program, source } = await resolveEpgProgramLive(epg, item);
+
+      item.program_name = program;
+      item.program_source = source;
+    })
+  );
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
 

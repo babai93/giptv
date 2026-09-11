@@ -203,6 +203,109 @@ function isScheduleCache(result) {
   );
 }
 
+// Per-channel schedules fetched on demand (used by serverless, where
+// rebuilding the full catalogue per request would be far too slow).
+const JIOTV_CHANNEL_TTL_MS = 30 * 60 * 1000;
+const perChannelMemory = new Map();
+
+async function fetchJioSchedules(channelId) {
+  const id = String(channelId || '');
+  if (!id) {
+    return [];
+  }
+
+  const memo = perChannelMemory.get(id);
+  if (memo && Date.now() - memo.time < JIOTV_CHANNEL_TTL_MS) {
+    return memo.schedules;
+  }
+
+  const cacheFile = path.join(CACHE_ROOT, `jiotv-channel-${id}.json`);
+
+  try {
+    const cached = await readCache(cacheFile);
+
+    if (cached && (await isCacheValid(cacheFile, JIOTV_CHANNEL_TTL_MS))) {
+      const schedules = JSON.parse(cached);
+      perChannelMemory.set(id, { schedules, time: Date.now() });
+      return schedules;
+    }
+  } catch (_error) {
+    // Fall through to network fetch
+  }
+
+  try {
+    const programmes = await fetchChannelEpg(id);
+    const schedules = programmes
+      .filter((programme) => programme.start && programme.stop && programme.title)
+      .map((programme) => ({ start: programme.start, stop: programme.stop, title: programme.title }))
+      .sort((a, b) => a.start - b.start);
+
+    if (schedules.length > 0) {
+      await writeCache(cacheFile, JSON.stringify(schedules));
+      perChannelMemory.set(id, { schedules, time: Date.now() });
+      return schedules;
+    }
+  } catch (_error) {
+    // Fall through to stale memory below
+  }
+
+  return memo ? memo.schedules : [];
+}
+
+// Resolves Jio channel ids from normalized channel names, so entries coming
+// from the m3u (whose tvg-id is not Jio's numeric id) can still be matched.
+const JIOTV_CHANNEL_LIST_TTL_MS = 6 * 60 * 60 * 1000;
+let channelIndexMemory = null;
+
+async function getJioChannelIndex() {
+  if (channelIndexMemory && Date.now() - channelIndexMemory.time < JIOTV_CHANNEL_LIST_TTL_MS) {
+    return channelIndexMemory.index;
+  }
+
+  const cacheFile = path.join(CACHE_ROOT, 'jiotv-channels-index.json');
+
+  try {
+    const cached = await readCache(cacheFile);
+
+    if (cached && (await isCacheValid(cacheFile, JIOTV_CHANNEL_LIST_TTL_MS))) {
+      const index = JSON.parse(cached);
+      channelIndexMemory = { index, time: Date.now() };
+      return index;
+    }
+  } catch (_error) {
+    // Fall through to network fetch
+  }
+
+  try {
+    const channels = await fetchChannels();
+    const index = {};
+
+    for (const channel of channels) {
+      const key = normalizeChannelName(channel.name);
+      if (key && !index[key]) {
+        index[key] = String(channel.id);
+      }
+    }
+
+    await writeCache(cacheFile, JSON.stringify(index));
+    channelIndexMemory = { index, time: Date.now() };
+    return index;
+  } catch (_error) {
+    return channelIndexMemory ? channelIndexMemory.index : {};
+  }
+}
+
+async function fetchJioSchedulesByName(name, fallbackId) {
+  const index = await getJioChannelIndex();
+  const resolvedId = index[normalizeChannelName(name)] || String(fallbackId || '');
+
+  if (!resolvedId) {
+    return [];
+  }
+
+  return fetchJioSchedules(resolvedId);
+}
+
 async function readJiotvEpg() {
   if (jiotvEpgCache && Date.now() - jiotvEpgCacheTime < JIOTV_EPG_MEMORY_TTL_MS) {
     return jiotvEpgCache;
@@ -256,6 +359,8 @@ async function readJiotvEpg() {
 
 module.exports = {
   readJiotvEpg,
+  fetchJioSchedules,
+  fetchJioSchedulesByName,
   normalizeChannelName,
   formatEpgTime,
   pickCurrentProgram

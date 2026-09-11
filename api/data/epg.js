@@ -5,7 +5,11 @@ const zlib = require('zlib');
 const { CACHE_ROOT, EPG_URL, EPG_LOCAL_FILE, M3U_REFRESH_MS } = require('../config');
 const { readCache, writeCache, isCacheValid } = require('../utils/cache');
 const { attribute, epgDate, textContent } = require('../utils/helpers');
-const { pickCurrentProgram, readJiotvEpg } = require('./jiotv-epg');
+const {
+  pickCurrentProgram,
+  fetchJioSchedulesByName,
+  readJiotvEpg
+} = require('./jiotv-epg');
 
 let parsedEpgCache = null;
 let parsedEpgCacheTime = 0;
@@ -91,6 +95,30 @@ function resolveEpgProgram(epg, item) {
   return { program: '', source: '' };
 }
 
+// Live variant used on the request path: fetches the Jio schedule for the
+// channel on demand (cheap for a single page of channels) and falls back to
+// the merged XML/Jio maps when the live fetch is unavailable.
+async function resolveEpgProgramLive(epg, item) {
+  const channelId = String(item?.id || '');
+  const nameKey = String(item?.name || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+
+  if (String(item?.country || '').toUpperCase() === 'IN') {
+    try {
+      const schedules = await fetchJioSchedulesByName(item?.name, channelId);
+
+      if (schedules.length > 0) {
+        return { program: pickCurrentProgram(schedules), source: 'jio' };
+      }
+    } catch (_error) {
+      // Fall through to map-based resolution
+    }
+  }
+
+  return resolveEpgProgram(epg, { id: channelId, name: item?.name, country: item?.country, nameKey });
+}
+
 async function readEpg() {
   const cacheFile = path.join(CACHE_ROOT, 'epg.xml');
 
@@ -132,7 +160,12 @@ async function readEpg() {
     }
   }
 
-  const jiotvEpg = await readJiotvEpg();
+  // The full Jio catalogue fetch takes tens of seconds and cannot persist its
+  // cache on serverless (read-only filesystem), so skip it there — the live
+  // per-channel fetch in resolveEpgProgramLive covers the request path.
+  const jiotvEpg = process.env.VERCEL
+    ? { programs: {}, byName: {} }
+    : await readJiotvEpg();
   const merged = mergeEpgData(baseEpg, jiotvEpg);
 
   parsedEpgCache = merged;
@@ -184,5 +217,6 @@ function parseEpgXml(xml) {
 
 module.exports = {
   readEpg,
-  resolveEpgProgram
+  resolveEpgProgram,
+  resolveEpgProgramLive
 };

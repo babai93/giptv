@@ -1,7 +1,12 @@
+const os = require('os');
 const path = require('path');
 
 const DATA_ROOT = path.join(__dirname, '..');
-const CACHE_ROOT = path.join(DATA_ROOT, '.cache');
+// Vercel's runtime filesystem is read-only outside /tmp, so keep caches in
+// the temp directory when running there; they still survive warm invocations.
+const CACHE_ROOT = process.env.VERCEL
+  ? path.join(os.tmpdir(), 'giptv-cache')
+  : path.join(DATA_ROOT, '.cache');
 const M3U_URL = 'https://iptv-org.github.io/iptv/index.m3u';
 const STREAMS_URL = 'https://iptv-org.github.io/api/streams.json';
 const EPG_URL = 'https://avkb.short.gy/epg.xml.gz';
