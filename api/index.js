@@ -148,7 +148,7 @@ module.exports = async function handler(req, res) {
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
 
-  return res.status(200).send(
+    return res.status(200).send(
     renderPage({
       channels: playable,
       countries: allCountries,
@@ -159,7 +159,8 @@ module.exports = async function handler(req, res) {
       totalPages,
       search,
       country,
-      category
+      category,
+      serverTime: Date.now()
     })
   );
 };

@@ -99,6 +99,31 @@ async function init() {
 
 document.addEventListener('shaka-ui-loaded', init);
 
+const clockEl = document.getElementById('server-clock');
+
+if (clockEl) {
+  const serverEpoch = Number(clockEl.getAttribute('data-server-epoch') || Date.now());
+  const startTime = Date.now();
+
+  function renderClock() {
+    const serverNow = new Date(serverEpoch + (Date.now() - startTime));
+
+    clockEl.textContent = serverNow.toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23'
+    });
+  }
+
+  renderClock();
+  setInterval(renderClock, 1000);
+}
+
 const countryPicker = document.getElementById('country-picker-toggle');
 const countryMenu = document.getElementById('country-picker-menu');
 

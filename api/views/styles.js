@@ -862,6 +862,28 @@ button.filter-control{
   }
 
 }
+
+.clock-footer{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  gap:8px;
+  padding:12px 0;
+  color:#6f7885;
+  font-size:.72rem;
+  letter-spacing:.06em;
+}
+
+.clock-label{
+  font-weight:800;
+  text-transform:uppercase;
+}
+
+#server-clock{
+  font-variant-numeric:tabular-nums;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  color:#aab2bd;
+}
 `;
 }
 

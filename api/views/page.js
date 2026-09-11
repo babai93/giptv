@@ -193,7 +193,8 @@ function renderPage({
   totalPages,
   search,
   country,
-  category
+  category,
+  serverTime
 }) {
   const pageChannels = channels.slice((page - 1) * CHANNELS_PER_PAGE, page * CHANNELS_PER_PAGE);
 
@@ -569,7 +570,12 @@ ${styles()}
 
     </div>
 
-  </main>
+     </main>
+
+  <footer class=\"clock-footer\">
+    <span class=\"clock-label\">Server time</span>
+    <span id=\"server-clock\" data-server-epoch=\"${serverTime || Date.now()}\"</span>
+  </footer>
 
 </div>
 
