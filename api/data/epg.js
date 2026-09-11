@@ -5,7 +5,7 @@ const zlib = require('zlib');
 const { CACHE_ROOT, EPG_URL, EPG_LOCAL_FILE, M3U_REFRESH_MS } = require('../config');
 const { readCache, writeCache, isCacheValid } = require('../utils/cache');
 const { attribute, epgDate, textContent } = require('../utils/helpers');
-const { readJiotvEpg } = require('./jiotv-epg');
+const { pickCurrentProgram, readJiotvEpg } = require('./jiotv-epg');
 
 let parsedEpgCache = null;
 let parsedEpgCacheTime = 0;
@@ -35,6 +35,25 @@ function mergeEpgData(baseEpg, jiotvEpg) {
   return { programs, byName, sources, byNameSources };
 }
 
+// JioTV entries hold full schedules (arrays of programmes) that must be
+// resolved against the wall clock at request time. XML entries are titles
+// that were already resolved while parsing the EPG document.
+function resolveProgramValue(program, now = Date.now()) {
+  if (Array.isArray(program)) {
+    return pickCurrentProgram(program, now);
+  }
+
+  return String(program || '');
+}
+
+function hasProgram(program) {
+  if (Array.isArray(program)) {
+    return program.length > 0;
+  }
+
+  return Boolean(program);
+}
+
 // Resolves the program for a channel with JioTV EPG as the primary
 // source for Indian channels and XML EPG for the rest.
 function resolveEpgProgram(epg, item) {
@@ -43,45 +62,33 @@ function resolveEpgProgram(epg, item) {
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
   const isIndianChannel = String(item?.country || '').toUpperCase() === 'IN';
+  const now = Date.now();
 
   const idPrograms = epg?.programs || {};
   const namePrograms = epg?.byName || {};
   const idSources = epg?.sources || {};
   const nameSources = epg?.byNameSources || {};
 
-  if (isIndianChannel) {
-    const nameMatch = namePrograms[nameKey] || '';
+  const primary = isIndianChannel ? namePrograms[nameKey] : idPrograms[channelId];
+  const primarySource = isIndianChannel ? nameSources[nameKey] : idSources[channelId];
+  const secondary = isIndianChannel ? idPrograms[channelId] : namePrograms[nameKey];
+  const secondarySource = isIndianChannel ? idSources[channelId] : nameSources[nameKey];
 
-    if (nameMatch) {
-      return {
-        program: nameMatch,
-        source: nameSources[nameKey] || 'jio'
-      };
-    }
-
-    const idMatch = idPrograms[channelId] || '';
-
+  if (hasProgram(primary)) {
     return {
-      program: idMatch,
-      source: idMatch ? idSources[channelId] || '' : ''
+      program: resolveProgramValue(primary, now),
+      source: primarySource || (isIndianChannel ? 'jio' : '')
     };
   }
 
-  const idMatch = idPrograms[channelId] || '';
-
-  if (idMatch) {
+  if (hasProgram(secondary)) {
     return {
-      program: idMatch,
-      source: idSources[channelId] || ''
+      program: resolveProgramValue(secondary, now),
+      source: secondarySource || ''
     };
   }
 
-  const nameMatch = namePrograms[nameKey] || '';
-
-  return {
-    program: nameMatch,
-    source: nameMatch ? nameSources[nameKey] || '' : ''
-  };
+  return { program: '', source: '' };
 }
 
 async function readEpg() {

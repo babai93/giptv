@@ -20,14 +20,27 @@ function normalizeChannelName(name) {
     .replace(/[^a-z0-9]/g, '');
 }
 
+// XMLTV timestamps must always carry IST (+0530) regardless of the server's
+// local timezone, so format the epoch explicitly in Asia/Kolkata.
 function formatEpgTime(epochMs) {
-  const date = new Date(Number(epochMs));
-  const pad = (value) => String(value).padStart(2, '0');
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23'
+  });
 
-  return (
-    `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}` +
-    `${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())} +0530`
-  );
+  const parts = {};
+
+  for (const part of formatter.formatToParts(Number(epochMs))) {
+    parts[part.type] = part.value;
+  }
+
+  return `${parts.year}${parts.month}${parts.day}${parts.hour}${parts.minute}${parts.second} +0530`;
 }
 
 async function fetchJson(url, headers = {}) {
@@ -119,42 +132,75 @@ async function fetchAllEpg(channels) {
   return results;
 }
 
-function buildEpgMaps(channels, epgByChannel) {
-  const programs = {};
-  const byName = {};
-  const now = Date.now();
+// Resolves the programme that should be displayed right now from a channel's
+// schedule: the on-air programme, else the next upcoming one, else the last
+// known programme in the fetched window.
+function pickCurrentProgram(schedules, now = Date.now()) {
+  if (!Array.isArray(schedules) || schedules.length === 0) {
+    return '';
+  }
 
-  for (const channel of channels) {
-    const programmes = epgByChannel.get(channel.id) || [];
-    let currentTitle = '';
-    let latestTitle = '';
-    let latestStop = 0;
+  let currentTitle = '';
+  let upcoming = null;
+  let latest = null;
 
-    for (const programme of programmes) {
-      if (programme.start <= now && programme.stop > now) {
-        currentTitle = programme.title;
-      }
-
-      if (programme.stop > latestStop) {
-        latestStop = programme.stop;
-        latestTitle = programme.title;
-      }
+  for (const programme of schedules) {
+    if (programme.start <= now && programme.stop > now) {
+      currentTitle = programme.title;
     }
 
-    const title = currentTitle || latestTitle;
+    if (programme.start > now && (!upcoming || programme.start < upcoming.start)) {
+      upcoming = programme;
+    }
 
-    if (!title) {
+    if (!latest || programme.stop > latest.stop) {
+      latest = programme;
+    }
+  }
+
+  if (currentTitle) {
+    return currentTitle;
+  }
+
+  return (upcoming || latest).title;
+}
+
+function buildEpgSchedules(channels, epgByChannel) {
+  const programs = {};
+  const byName = {};
+
+  for (const channel of channels) {
+    const schedules = (epgByChannel.get(channel.id) || [])
+      .filter((programme) => programme.start && programme.stop && programme.title)
+      .map((programme) => ({ start: programme.start, stop: programme.stop, title: programme.title }))
+      .sort((a, b) => a.start - b.start);
+
+    if (schedules.length === 0) {
       continue;
     }
 
     const channelId = String(channel.id);
-    programs[channelId] = title;
+    programs[channelId] = schedules;
 
     const key = normalizeChannelName(channel.name);
-    byName[key] = title;
+    if (key) {
+      byName[key] = schedules;
+    }
   }
 
   return { programs, byName };
+}
+
+// Older caches stored only the "now playing" title resolved at build time,
+// which went stale for up to 6 hours. Schedule-shaped caches keep every
+// programme so the current show can be resolved at request time.
+function isScheduleCache(result) {
+  return Boolean(
+    result &&
+      result.programs &&
+      result.byName &&
+      Object.values(result.programs).some((value) => Array.isArray(value) && value.length > 0)
+  );
 }
 
 async function readJiotvEpg() {
@@ -169,9 +215,13 @@ async function readJiotvEpg() {
 
     if (cached && (await isCacheValid(cacheFile, JIOTV_EPG_TTL_MS))) {
       const parsed = JSON.parse(cached);
-      jiotvEpgCache = parsed;
-      jiotvEpgCacheTime = Date.now();
-      return parsed;
+
+      if (isScheduleCache(parsed)) {
+        jiotvEpgCache = parsed;
+        jiotvEpgCacheTime = Date.now();
+        return parsed;
+      }
+      // Legacy cache only has baked-in titles, so rebuild from the network.
     }
   } catch (_error) {
     // Fall through to network fetch
@@ -180,7 +230,7 @@ async function readJiotvEpg() {
   try {
     const channels = await fetchChannels();
     const epgByChannel = await fetchAllEpg(channels);
-    const result = buildEpgMaps(channels, epgByChannel);
+    const result = buildEpgSchedules(channels, epgByChannel);
 
     await writeCache(cacheFile, JSON.stringify(result));
     jiotvEpgCache = result;
@@ -207,5 +257,6 @@ async function readJiotvEpg() {
 module.exports = {
   readJiotvEpg,
   normalizeChannelName,
-  formatEpgTime
+  formatEpgTime,
+  pickCurrentProgram
 };

@@ -1,0 +1,19 @@
+{
+  "at": "Fri Sep 11 2026 14:56:54 GMT+0530 (India Standard Time)",
+  "programsCount": 1428,
+  "jioSourcedPrograms": 1191,
+  "b4uMusic": {
+    "program": "SOLID HITS",
+    "source": "jio"
+  },
+  "cnbcPrime": {
+    "program": "NSE Closing Bell",
+    "source": "jio"
+  },
+  "liveJioOnAirNow": "SOLID HITS",
+  "matchesLiveJio": true,
+  "nextUpcoming": {
+    "show": "SOLID HITS",
+    "start": 1789119000000
+  }
+}
