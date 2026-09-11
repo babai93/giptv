@@ -21,6 +21,10 @@ async function serveStaticAsset(requestUrl, res, fileName) {
 }
 
 module.exports = async function handler(req, res) {
+  // Force Vercel function region to Mumbai — prevents Jio geo-restriction
+  // failures when Vercel ignores `vercel.json` regions (build ran in iad1).
+  res.setHeader('x-vercel-region', 'bom1');
+
   const requestUrl = new URL(req.url || '/', `https://${req.headers.host || 'localhost'}`);
 
   if (requestUrl.pathname === '/gtv-logo.svg') {
@@ -146,9 +150,14 @@ module.exports = async function handler(req, res) {
     })
   );
 
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  // Prevent Vercel CDN from serving stale cached responses from the wrong
+  // region (iad1 US build cache returned the old index). Every request must
+  // re-render in bom1 (Mumbai) so live Jio EPG is always fetched in-region.
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
 
-    return res.status(200).send(
+  return res.status(200).send(
     renderPage({
       channels: playable,
       countries: allCountries,
