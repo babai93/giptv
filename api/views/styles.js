@@ -884,6 +884,16 @@ button.filter-control{
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   color:#aab2bd;
 }
+
+.clock-region{
+  font-variant-numeric:tabular-nums;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  color:#7d8794;
+  text-transform:uppercase;
+  padding:2px 6px;
+  border:1px solid rgba(125,135,148,.35);
+  border-radius:999px;
+}
 `;
 }
 

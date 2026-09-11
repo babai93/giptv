@@ -169,7 +169,8 @@ module.exports = async function handler(req, res) {
       search,
       country,
       category,
-      serverTime: Date.now()
+      serverTime: Date.now(),
+      serverRegion: process.env.VERCEL_REGION || (process.env.VERCEL ? 'unknown' : 'local')
     })
   );
 };

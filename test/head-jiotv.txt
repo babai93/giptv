@@ -328,72 +328,24 @@ async function getJioChannelIndex() {
 
 async function fetchJioSchedulesByName(name, fallbackId) {
   const index = await getJioChannelIndex();
-  const resolvedId = resolveJioChannelId(index, name, fallbackId);
+  const rawName = String(name || '');
+
+  const candidates = [normalizeChannelName(rawName)];
+
+  // iptv-org sometimes appends tokens (e.g. "9XM TV") that Jio's listing omits.
+  // Drop a trailing standalone token and re-normalize as a fallback.
+  const stripped = rawName.trim().replace(/\s+(tv|hd|sd|uhd|4k|fta|plus|one|two|three)\s*$/i, '');
+  if (stripped && stripped !== rawName.trim()) {
+    candidates.push(normalizeChannelName(stripped));
+  }
+
+  const resolvedId = candidates.map((key) => index[key]).find(Boolean) || String(fallbackId || '');
 
   if (!resolvedId) {
     return [];
   }
 
   return fetchJioSchedules(resolvedId);
-}
-
-// Map iptv-org display names (e.g. "9XM India", "B4U Music HD") onto Jio's
-// shorter catalogue names ("9XM", "B4U Music") by trying exact, suffix-stripped,
-// word-truncated, and longest-prefix matches against the channel index.
-function resolveJioChannelId(index, name, fallbackId) {
-  const rawName = String(name || '').trim();
-  const candidates = [];
-
-  const pushCandidate = (value) => {
-    const key = normalizeChannelName(value);
-    if (key && !candidates.includes(key)) {
-      candidates.push(key);
-    }
-  };
-
-  pushCandidate(rawName);
-
-  // Drop trailing quality / geo / filler tokens one at a time.
-  let stripped = rawName;
-  const trailingToken =
-    /\s+(tv|hd|sd|uhd|4k|fta|plus|one|two|three|india|in|channel|music|movies|news|entertainment|sports|network)\s*$/i;
-
-  while (trailingToken.test(stripped)) {
-    stripped = stripped.replace(trailingToken, '').trim();
-    pushCandidate(stripped);
-  }
-
-  // Also try progressively dropping the last whitespace-separated word.
-  const words = rawName.split(/\s+/).filter(Boolean);
-  for (let count = words.length - 1; count >= 1; count -= 1) {
-    pushCandidate(words.slice(0, count).join(' '));
-  }
-
-  for (const key of candidates) {
-    if (index[key]) {
-      return String(index[key]);
-    }
-  }
-
-  // Longest index key that is a prefix of a candidate (9xm ⊂ 9xmindia).
-  const indexKeys = Object.keys(index || {});
-  let bestKey = '';
-  for (const candidate of candidates) {
-    for (const key of indexKeys) {
-      if (key.length < 2 || key.length <= bestKey.length) {
-        continue;
-      }
-      if (candidate.startsWith(key)) {
-        bestKey = key;
-      }
-    }
-  }
-
-  if (bestKey) {
-    return String(index[bestKey]);
-  }
-
-  return String(fallbackId || '');
 }
 
 async function readJiotvEpg() {
@@ -451,7 +403,6 @@ module.exports = {
   readJiotvEpg,
   fetchJioSchedules,
   fetchJioSchedulesByName,
-  resolveJioChannelId,
   normalizeChannelName,
   formatEpgTime,
   pickCurrentProgram

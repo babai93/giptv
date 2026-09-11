@@ -194,8 +194,7 @@ function renderPage({
   search,
   country,
   category,
-  serverTime,
-  serverRegion
+  serverTime
 }) {
   const pageChannels = channels.slice((page - 1) * CHANNELS_PER_PAGE, page * CHANNELS_PER_PAGE);
 
